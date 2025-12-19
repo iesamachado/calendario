@@ -1,0 +1,131 @@
+/* Global Styles */
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    min-height: 100vh;
+}
+
+/* Calendar Grid */
+.calendar-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    /* 7 days a week */
+    gap: 1px;
+    background-color: #e9ecef;
+    /* Border color effect */
+}
+
+/* Calendar Header Cells (Mon, Tue, etc.) */
+.calendar-header {
+    background-color: #f8f9fa;
+    font-weight: 600;
+    text-align: center;
+    padding: 10px;
+    color: #495057;
+}
+
+/* Day Cells */
+.calendar-day {
+    background-color: #ffffff;
+    min-height: 100px;
+    padding: 10px;
+    position: relative;
+    cursor: default;
+    /* Default cursor */
+    transition: background-color 0.2s;
+}
+
+.calendar-day:hover {
+    background-color: #fdfdfd;
+}
+
+.calendar-day.empty {
+    background-color: #f8f9fa;
+    /* Days from prev/next month */
+}
+
+/* Date Number */
+.day-number {
+    font-weight: bold;
+    font-size: 1.1rem;
+    color: #343a40;
+    margin-bottom: 5px;
+    display: block;
+}
+
+/* Slot Indicator */
+.slot-badge {
+    cursor: pointer;
+    user-select: none;
+    font-size: 0.9rem;
+    padding: 5px 10px;
+    border-radius: 20px;
+    display: inline-block;
+    transition: transform 0.1s;
+}
+
+.slot-badge.admin-interactive:active {
+    transform: scale(0.95);
+}
+
+/* Status Colors for Slots */
+.slots-high {
+    background-color: #d1e7dd;
+    color: #0f5132;
+}
+
+/* 3-4 */
+.slots-low {
+    background-color: #fff3cd;
+    color: #664d03;
+}
+
+/* 1-2 */
+.slots-zero {
+    background-color: #f8d7da;
+    color: #842029;
+}
+
+/* 0 */
+
+/* Special Days */
+.day-red {
+    background-color: #ffe5e5 !important;
+}
+
+.day-holiday {
+    background-color: #e2e3e5 !important;
+    color: #6c757d;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .calendar-day {
+        min-height: 60px;
+        /* Reduced to fit better */
+        padding: 2px;
+    }
+
+    .day-number {
+        font-size: 0.8rem;
+        margin-bottom: 2px;
+    }
+
+    .slot-badge {
+        font-size: 0.7rem;
+        padding: 1px 4px;
+        white-space: nowrap;
+        /* Prevent breaking */
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 100%;
+        display: block;
+        /* Stack if needed */
+        margin: 0 auto;
+    }
+
+    /* Ensure header cells are small enough */
+    .calendar-header {
+        padding: 5px 2px;
+        font-size: 0.8rem;
+    }
+}

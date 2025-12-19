@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Calendario IES Machado</title>
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body class="bg-light">
+
+    <!-- Navbar -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary shadow-sm">
+        <div class="container">
+            <a class="navbar-brand fw-bold" href="#">
+                <i class="fas fa-calendar-alt me-2"></i>Calendario IES Machado
+            </a>
+            <div class="d-flex align-items-center">
+                <button id="admin-btn" class="btn btn-warning btn-sm fw-bold text-dark me-2 d-none">
+                    <i class="fas fa-user-shield me-1"></i> Admin
+                </button>
+                <div id="user-info" class="text-white me-3 d-none">
+                    <span id="user-email"></span>
+                </div>
+                <button id="auth-btn" class="btn btn-light btn-sm fw-bold">
+                    <i class="fab fa-google me-1"></i> Iniciar Sesión
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="container my-5">
+        <!-- Login Prompt (Visible when not logged in) -->
+        <div id="login-prompt" class="text-center py-5">
+            <h2 class="mb-3">Bienvenido al Gestor de Calendario</h2>
+            <p class="text-muted mb-4">Por favor, inicia sesión con tu cuenta de @iesamachado.org para continuar.</p>
+        </div>
+
+        <!-- Calendar Container (Hidden by default) -->
+        <div id="calendar-container" class="d-none">
+            <!-- Admin Legend (Visible only to Admin) -->
+            <div id="admin-legend" class="alert alert-warning border-warning d-none mb-4" role="alert">
+                <div class="d-flex align-items-center">
+                    <i class="fas fa-info-circle fa-2x me-3"></i>
+                    <div>
+                        <h5 class="alert-heading fw-bold mb-1">Controles de Administrador</h5>
+                        <ul class="mb-0 ps-3 small">
+                            <li><strong>Clic Izquierdo</strong> en huecos: <span class="text-danger fw-bold">-1
+                                    Hueco</span>.</li>
+                            <li><strong>Clic Derecho</strong> en huecos: <span class="text-success fw-bold">+1
+                                    Hueco</span>.</li>
+                            <li><strong>Ctrl + Clic</strong> en cualquier día: Marcar/Desmarcar <span
+                                    class="text-danger fw-bold">Festivo</span>.</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <button id="prev-month" class="btn btn-outline-primary"><i class="fas fa-chevron-left"></i>
+                    Anterior</button>
+                <h3 id="current-month-year" class="m-0 fw-bold text-primary"></h3>
+                <button id="next-month" class="btn btn-outline-primary">Siguiente <i
+                        class="fas fa-chevron-right"></i></button>
+            </div>
+
+            <!-- Calendar Grid -->
+            <div class="card shadow-sm border-0">
+                <div class="card-body p-0">
+                    <div id="calendar-grid" class="calendar-grid">
+                        <!-- Days will be rendered here by JS -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Legend -->
+            <div class="mt-4 d-flex gap-3 justify-content-center flex-wrap">
+                <div class="d-flex align-items-center"><span class="badge bg-success me-2">4-3</span> Alta
+                    Disponibilidad</div>
+                <div class="d-flex align-items-center"><span class="badge bg-warning text-dark me-2">2-1</span> Baja
+                    Disponibilidad</div>
+                <div class="d-flex align-items-center"><span class="badge bg-danger me-2">0</span> Completo</div>
+                <div class="d-flex align-items-center"><span class="badge bg-secondary me-2">Festivo</span> No
+                    Disponible</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Admin Modal -->
+    <div class="modal fade" id="adminModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header bg-warning">
+                    <h5 class="modal-title text-dark"><i class="fas fa-users-cog me-2"></i>Gestión de Usuarios</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Email</th>
+                                    <th>Role</th>
+                                    <th>Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody id="admin-users-list">
+                                <!-- Users rendered here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap Bundle with Popper -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+    <!-- Firebase SDKs (Compat for easier setup or modular v9 - Plan uses v9 modular but loading via module scripts is better) -->
+    <!-- We will use type="module" for our scripts to import Firebase correctly -->
+
+    <!-- Custom JS -->
+    <script type="module" src="js/app.js"></script>
+</body>
+
+</html>
