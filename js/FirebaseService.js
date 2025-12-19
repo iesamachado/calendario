@@ -146,11 +146,19 @@ export class FirebaseService {
 
             const monthId = dateStr.substring(0, 7);
 
-            await setDoc(docRef, {
+            const payload = {
                 isHoliday: isHoliday,
                 date: dateStr,
                 monthId: monthId
-            }, { merge: true });
+            };
+
+            // If it's a new document, we must provide remainingSlots to satisfy strict Security Rules
+            // that might expect this field to exist and be valid (0-4).
+            if (!snap.exists()) {
+                payload.remainingSlots = 4;
+            }
+
+            await setDoc(docRef, payload, { merge: true });
             console.log(`Holiday set to ${isHoliday}`);
         } catch (e) {
             console.error("Error toggling holiday:", e);
