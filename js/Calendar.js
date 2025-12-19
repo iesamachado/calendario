@@ -192,7 +192,8 @@ export class Calendar {
                         // Interaction Handlers
                         badge.addEventListener('click', (e) => {
                             e.stopPropagation(); // Avoid cell click if we add one
-                            if (e.ctrlKey) {
+                            if (e.ctrlKey || e.metaKey) {
+                                console.log("Ctrl/Meta + Click detected on badge");
                                 // Delegate to holiday toggle (treated as cell interaction?)
                                 // Or handle here
                                 this.firebaseService.toggleHoliday(dateStr);
@@ -217,7 +218,8 @@ export class Calendar {
                     // Allow cell click for turning INTO holiday even if not holiday yet
                     if (this.isAdmin) {
                         cell.onclick = (e) => {
-                            if (e.ctrlKey) {
+                            if (e.ctrlKey || e.metaKey) {
+                                console.log("Ctrl/Meta + Click detected on cell");
                                 this.firebaseService.toggleHoliday(dateStr);
                             }
                         };

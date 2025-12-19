@@ -126,25 +126,35 @@ export class FirebaseService {
      * Toggles the holiday status for a specific day.
      */
     async toggleHoliday(dateStr) {
-        const docRef = doc(this.db, "availability", dateStr);
-        const snap = await getDoc(docRef);
-        let isHoliday = true; // Default to true if not exists (making it holiday)
+        console.log(`Toggling holiday for ${dateStr}...`);
+        try {
+            const docRef = doc(this.db, "availability", dateStr);
+            const snap = await getDoc(docRef);
+            let isHoliday = true; // Default to true if not exists (making it holiday)
 
-        if (snap.exists()) {
-            const data = snap.data();
-            // If it exists and has isHoliday, toggle it.
-            // If it exists but no isHoliday, assume true (was normal day).
-            if (data.isHoliday !== undefined) {
-                isHoliday = !data.isHoliday;
+            if (snap.exists()) {
+                const data = snap.data();
+                console.log("Current data:", data);
+                // If it exists and has isHoliday, toggle it.
+                // If it exists but no isHoliday, assume true (was normal day).
+                if (data.isHoliday !== undefined) {
+                    isHoliday = !data.isHoliday;
+                }
+            } else {
+                console.log("Doc does not exist, creating as holiday.");
             }
+
+            const monthId = dateStr.substring(0, 7);
+
+            await setDoc(docRef, {
+                isHoliday: isHoliday,
+                date: dateStr,
+                monthId: monthId
+            }, { merge: true });
+            console.log(`Holiday set to ${isHoliday}`);
+        } catch (e) {
+            console.error("Error toggling holiday:", e);
+            alert("Error al cambiar festivo: " + e.message);
         }
-
-        const monthId = dateStr.substring(0, 7);
-
-        await setDoc(docRef, {
-            isHoliday: isHoliday,
-            date: dateStr,
-            monthId: monthId
-        }, { merge: true });
     }
 }
