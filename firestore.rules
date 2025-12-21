@@ -2,31 +2,160 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // User functions
-    function isAdmin() {
-      return request.auth != null && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true;
-    }
-    
-    function isAuthed() {
+    // Funciones de ayuda
+    function isAuthenticated() {
       return request.auth != null;
     }
-
-    // Availability Collection
-    // Only authenticated users can read to see the calendar
-    // Only admins can update the remaining slots
-    match /availability/{day} {
-      allow read: if isAuthed();
-      allow create, update: if isAdmin(); 
-                            // Removed field validation to avoid complexity with partial merges (isHoliday vs remainingSlots)
-                            // Admin code is trusted.
+    
+    function hasRole(role) {
+      return isAuthenticated() && role in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.roles;
+    }
+    
+    function hasAnyRole(roles) {
+      return isAuthenticated() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.roles.hasAny(roles);
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true;
     }
 
-    // Users Collection
-    // Admins can read/write everything in users collection to manage roles
-    // Users can read/write their own document (for auto-creation on login)
+    function isDirector() {
+      return hasRole('director');
+    }
+
+    // Reglas para usuarios
     match /users/{userId} {
-      allow read, write: if isAuthed() && request.auth.uid == userId;
-      allow read, write: if isAdmin();
+      allow read: if isAuthenticated();
+      // Solo admin puede escribir/borrar cualquier usuario.
+      // Jefes de departamento pueden actualizar el departamento de un usuario si ellos son el jefe? 
+      // La "escritura" de departamento la hace el admin (o el jefe si añadimos esa regla).
+      // El requisito "Jefe de departamento puede añadir gente a su departamento" implica escritura.
+      // Pero no, solo admin edita usuarios completos. Jefe solo "añade".
+      // Vamos a permitir al admin todo.
+      allow create: if isAuthenticated() && request.auth.uid == userId; // Self registration
+      allow update: if isAuthenticated() && (request.auth.uid == userId || isAdmin() || hasRole('jefe_departamento')); 
+      // Nota: un usuario puede actualizar su perfi, admin todo, jefe dept puede que necesite para "añadir".
+      // Limitaremos la lógica de "añadir" en el cliente, pero aquí dejamos la puerta si es necesario.
+      allow delete: if isAdmin();
+    }
+
+    // Reglas para disponibilidad (Calendario)
+    match /availability/{dayId} {
+      allow read: if isAuthenticated();
+      // Solo directora puede cambiar días libres y festivos (Full Write)
+      allow write: if isAdmin() || isDirector();
+      
+      // Equipo Directivo: Solo gestionar eventos
+      allow update: if hasRole('equipo_directivo') && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['events']);
+      allow create: if hasRole('equipo_directivo') && request.resource.data.remainingSlots == 4 && (request.resource.data.isHoliday == false || !("isHoliday" in request.resource.data));
+    }
+
+    // Reglas para departamentos
+    match /departments/{deptId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // Reglas para anuncios
+    match /announcements/{announcementId} {
+      allow read: if isAuthenticated();
+      // Equipo directivo y director pueden escribir
+      allow create: if hasAnyRole(['equipo_directivo', 'director']) || isAdmin();
+      allow update, delete: if (hasAnyRole(['equipo_directivo', 'director']) && resource.data.author == request.auth.uid) || isAdmin();
+    }
+
+    // Tickets TIC
+    match /tickets_tic/{ticketId} {
+      // Ver: Dueño, Admin, Equipo TIC, Jefe Dept (si es de su dept)
+      allow read: if isAuthenticated() && (
+        resource.data.requestedBy == request.auth.uid || 
+        isAdmin() || 
+        hasRole('equipo_tic') ||
+        (hasRole('jefe_departamento') && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.department == resource.data.department)
+      );
+      
+      // Crear: Todos
+      allow create: if isAuthenticated();
+      
+      // Actualizar: Equipo TIC, Admin, Dueño (solo algunos campos)
+      allow update: if isAuthenticated() && (
+        isAdmin() || 
+        hasRole('equipo_tic') || 
+        (resource.data.requestedBy == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title', 'description', 'priority']))
+      );
+    }
+
+    // Tickets Mantenimiento
+    match /tickets_maintenance/{ticketId} {
+      // Ver: Dueño, Admin, Equipo Mantenimiento, Jefe Dept (si es de su dept)
+      allow read: if isAuthenticated() && (
+        resource.data.requestedBy == request.auth.uid || 
+        isAdmin() || 
+        hasRole('equipo_mantenimiento') ||
+        (hasRole('jefe_departamento') && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.department == resource.data.department)
+      );
+      
+      allow create: if isAuthenticated();
+      
+      allow update: if isAuthenticated() && (
+        isAdmin() || 
+        hasRole('equipo_mantenimiento') || 
+        hasRole('equipo_directivo') ||
+        isDirector() ||
+        (resource.data.requestedBy == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title', 'description', 'priority', 'location']))
+      );
+    }
+
+    // Configuración
+    match /settings/{settingId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated(); // Para incrementar contadores
+    }
+
+    // Tickets 3D
+    match /tickets_3d/{ticketId} {
+      // Ver: Dueño, Admin, Equipo 3D, Jefe Dept (si es de su dept)
+      allow read: if isAuthenticated() && (
+        resource.data.requestedBy == request.auth.uid || 
+        isAdmin() || 
+        hasRole('equipo_3d') ||
+        (hasRole('jefe_departamento') && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.department == resource.data.department)
+      );
+      
+      allow create: if isAuthenticated();
+      
+      allow update: if isAuthenticated() && (
+        isAdmin() || 
+        hasRole('equipo_3d') || 
+        (resource.data.requestedBy == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title', 'description', 'priority', 'stlUrl', 'notes']))
+      );
+    }
+
+    // Reserva SUM
+    match /sum_reservations/{reservationId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin() || hasRole('equipo_tic'));
+    }
+
+    // Carros de Portátiles - Inventario
+    match /carts/{cartId} {
+      allow read: if isAuthenticated();
+      // Solo Equipo TIC o Admin pueden gestionar el inventario
+      allow write: if isAdmin() || hasRole('equipo_tic');
+    }
+
+    // Carros de Portátiles - Reservas
+    match /cart_reservations/{reservationId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin() || hasRole('equipo_tic'));
+    }
+
+    // Registros de acceso
+    match /login_logs/{logId} {
+      allow create: if request.auth != null;
+      allow read: if isAdmin();
     }
   }
 }

@@ -1,0 +1,32 @@
+/* Additions to style.css for calendar events */
+
+.event-badge {
+    font-size: 0.75rem;
+    padding: 2px 5px;
+    border-radius: 4px;
+    margin-top: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: block;
+    width: 100%;
+}
+
+.event-badge.bg-meeting,
+.event-badge.bg-evaluation {
+    background-color: #0dcaf0;
+    /* Info cyan */
+    color: white;
+}
+
+.event-badge.bg-cloister {
+    background-color: #dc3545;
+    /* Danger red */
+    color: white;
+}
+
+.event-badge.bg-other {
+    background-color: #6c757d;
+    /* Secondary gray */
+    color: white;
+}

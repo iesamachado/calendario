@@ -4,13 +4,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Calendario IES Machado</title>
+    <title>Intranet IES Antonio Machado</title>
     <!-- Bootstrap CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <!-- Custom CSS -->
     <link rel="stylesheet" href="css/style.css">
+    <link rel="icon" type="image/png" href="img/favicon.png">
 </head>
 
 <body class="bg-light">
@@ -19,7 +20,7 @@
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary shadow-sm">
         <div class="container">
             <a class="navbar-brand fw-bold" href="#">
-                <i class="fas fa-calendar-alt me-2"></i>Calendario IES Machado
+                <i class="fas fa-school me-2"></i>Intranet IES Antonio Machado
             </a>
             <div class="d-flex align-items-center">
                 <button id="admin-btn" class="btn btn-warning btn-sm fw-bold text-dark me-2 d-none">
@@ -36,61 +37,77 @@
     </nav>
 
     <!-- Main Content -->
-    <div class="container my-5">
+    <div class="container-fluid login-bg" id="login-container">
         <!-- Login Prompt (Visible when not logged in) -->
-        <div id="login-prompt" class="text-center py-5">
-            <h2 class="mb-3">Bienvenido al Gestor de Calendario</h2>
-            <p class="text-muted mb-4">Por favor, inicia sesión con tu cuenta de @iesamachado.org para continuar.</p>
-        </div>
+        <div id="login-prompt" class="login-card fade-in">
+            <i class="fas fa-school login-icon"></i>
+            <h2 class="mb-3 fw-bold">Intranet IES Antonio Machado</h2>
+            <p class="text-muted mb-4">Bienvenido al portal de gestión integral.</p>
 
-        <!-- Calendar Container (Hidden by default) -->
-        <div id="calendar-container" class="d-none">
-            <!-- Admin Legend (Visible only to Admin) -->
-            <div id="admin-legend" class="alert alert-warning border-warning d-none mb-4" role="alert">
-                <div class="d-flex align-items-center">
-                    <i class="fas fa-info-circle fa-2x me-3"></i>
-                    <div>
-                        <h5 class="alert-heading fw-bold mb-1">Controles de Administrador</h5>
-                        <ul class="mb-0 ps-3 small">
-                            <li><strong>Clic Izquierdo</strong> en huecos: <span class="text-danger fw-bold">-1
-                                    Hueco</span>.</li>
-                            <li><strong>Clic Derecho</strong> en huecos: <span class="text-success fw-bold">+1
-                                    Hueco</span>.</li>
-                            <li><strong>Ctrl + Clic</strong> en cualquier día: Marcar/Desmarcar <span
-                                    class="text-danger fw-bold">Festivo</span>.</li>
-                        </ul>
-                    </div>
-                </div>
+            <div id="login-actions">
+                <p class="text-muted small mb-4">Por favor, inicia sesión con tu cuenta corporativa.</p>
+                <button id="auth-btn-main" class="btn btn-primary btn-lg w-100 fw-bold shadow-sm">
+                    <i class="fab fa-google me-2"></i> Iniciar con Google
+                </button>
             </div>
 
-            <div class="d-flex justify-content-between align-items-center mb-4">
-                <button id="prev-month" class="btn btn-outline-primary"><i class="fas fa-chevron-left"></i>
-                    Anterior</button>
-                <h3 id="current-month-year" class="m-0 fw-bold text-primary"></h3>
-                <button id="next-month" class="btn btn-outline-primary">Siguiente <i
-                        class="fas fa-chevron-right"></i></button>
-            </div>
-
-            <!-- Calendar Grid -->
-            <div class="card shadow-sm border-0">
-                <div class="card-body p-0">
-                    <div id="calendar-grid" class="calendar-grid">
-                        <!-- Days will be rendered here by JS -->
-                    </div>
-                </div>
-            </div>
-
-            <!-- Legend -->
-            <div class="mt-4 d-flex gap-3 justify-content-center flex-wrap">
-                <div class="d-flex align-items-center"><span class="badge bg-success me-2">4-3</span> Alta
-                    Disponibilidad</div>
-                <div class="d-flex align-items-center"><span class="badge bg-warning text-dark me-2">2-1</span> Baja
-                    Disponibilidad</div>
-                <div class="d-flex align-items-center"><span class="badge bg-danger me-2">0</span> Completo</div>
-                <div class="d-flex align-items-center"><span class="badge bg-secondary me-2">Festivo</span> No
-                    Disponible</div>
+            <div id="login-error-msg" class="alert alert-danger d-none mt-3" role="alert">
             </div>
         </div>
+    </div>
+
+    <!-- Sidebar Menu (Generated Dynamically or Static) -->
+    <!-- We'll assume static for now given previous views, but actually DashboardApp.js maps them. -->
+    <!-- Let's check the file content first to be sure. -->
+
+    <!-- Calendar Container (Hidden by default) -->
+    <div id="calendar-container" class="d-none">
+        <!-- Admin Legend (Visible only to Admin) -->
+        <div id="admin-legend" class="alert alert-warning border-warning d-none mb-4" role="alert">
+            <div class="d-flex align-items-center">
+                <i class="fas fa-info-circle fa-2x me-3"></i>
+                <div>
+                    <h5 class="alert-heading fw-bold mb-1">Controles de Administrador</h5>
+                    <ul class="mb-0 ps-3 small">
+                        <li><strong>Clic Izquierdo</strong> en huecos: <span class="text-danger fw-bold">-1
+                                Hueco</span>.</li>
+                        <li><strong>Clic Derecho</strong> en huecos: <span class="text-success fw-bold">+1
+                                Hueco</span>.</li>
+                        <li><strong>Ctrl + Clic</strong> en cualquier día: Marcar/Desmarcar <span
+                                class="text-danger fw-bold">Festivo</span>.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <button id="prev-month" class="btn btn-outline-primary"><i class="fas fa-chevron-left"></i>
+                Anterior</button>
+            <h3 id="current-month-year" class="m-0 fw-bold text-primary"></h3>
+            <button id="next-month" class="btn btn-outline-primary">Siguiente <i
+                    class="fas fa-chevron-right"></i></button>
+        </div>
+
+        <!-- Calendar Grid -->
+        <div class="card shadow-sm border-0">
+            <div class="card-body p-0">
+                <div id="calendar-grid" class="calendar-grid">
+                    <!-- Days will be rendered here by JS -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Legend -->
+        <div class="mt-4 d-flex gap-3 justify-content-center flex-wrap">
+            <div class="d-flex align-items-center"><span class="badge bg-success me-2">4-3</span> Alta
+                Disponibilidad</div>
+            <div class="d-flex align-items-center"><span class="badge bg-warning text-dark me-2">2-1</span> Baja
+                Disponibilidad</div>
+            <div class="d-flex align-items-center"><span class="badge bg-danger me-2">0</span> Completo</div>
+            <div class="d-flex align-items-center"><span class="badge bg-secondary me-2">Festivo</span> No
+                Disponible</div>
+        </div>
+    </div>
     </div>
 
     <!-- Admin Modal -->

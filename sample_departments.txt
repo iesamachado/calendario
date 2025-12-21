@@ -1,0 +1,58 @@
+# Script to initialize sample departments
+# Run this via Firebase Console or as an initialization script
+
+departments = [
+    {
+        "name": "Matemáticas",
+        "code": "MAT",
+        "active": true
+    },
+    {
+        "name": "Lengua y Literatura",
+        "code": "LEN",
+        "active": true
+    },
+    {
+        "name": "Inglés",
+        "code": "ING",
+        "active": true
+    },
+    {
+        "name": "Tecnología",
+        "code": "TEC",
+        "active": true
+    },
+    {
+        "name": "Física y Química",
+        "code": "FYQ",
+        "active": true
+    },
+    {
+        "name": "Educación Física",
+        "code": "EF",
+        "active": true
+    },
+    {
+        "name": "Historia",
+        "code": "HIS",
+        "active": true
+    },
+    {
+        "name": "Biología y Geología",
+        "code": "BYG",
+        "active": true
+    },
+    {
+        "name": "Informática",
+        "code": "INF",
+        "active": true
+    },
+    {
+        "name": "Administración",
+        "code": "ADM",
+        "active": true
+    }
+]
+
+# To create these in Firestore, use the admin panel UI
+# or run via Firebase Admin SDK

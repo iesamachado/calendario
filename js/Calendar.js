@@ -1,16 +1,29 @@
 import { MONTHS, DAYS, getDaysInMonth, getFirstDayOfMonth } from './utils.js';
 
 export class Calendar {
-    constructor(containerId, firebaseService, user) {
-        this.container = document.getElementById(containerId);
-        this.grid = document.getElementById('calendar-grid');
-        this.monthLabel = document.getElementById('current-month-year');
-        this.prevBtn = document.getElementById('prev-month');
-        this.nextBtn = document.getElementById('next-month');
+    constructor(containerOrConfig, firebaseService, user, userRoles = []) {
+        if (typeof containerOrConfig === 'string') {
+            // Legacy mode: ID passed
+            this.container = document.getElementById(containerOrConfig);
+            this.grid = document.getElementById('calendar-grid');
+            this.monthLabel = document.getElementById('current-month-year');
+            this.prevBtn = document.getElementById('prev-month');
+            this.nextBtn = document.getElementById('next-month');
+        } else {
+            // New mode: Config object passed
+            this.grid = containerOrConfig.grid;
+            this.monthLabel = containerOrConfig.monthLabel;
+            this.prevBtn = containerOrConfig.prevBtn;
+            this.nextBtn = containerOrConfig.nextBtn;
+        }
 
         this.firebaseService = firebaseService;
         this.user = user;
-        this.isAdmin = false;
+        this.userRoles = userRoles;
+
+        // Define permissions based on strict requirements
+        this.canEditSlots = this.userRoles.includes('director');
+        this.canAddEvents = this.userRoles.includes('equipo_directivo');
 
         const now = new Date();
         this.currentYear = now.getFullYear();
@@ -23,8 +36,7 @@ export class Calendar {
     }
 
     async init() {
-        this.isAdmin = await this.firebaseService.getUserRole(this.user.uid);
-
+        // No need to fetch role again, we rely on passed roles
         this.renderHeader();
         this.setupControls();
         this.loadMonth();
@@ -151,7 +163,7 @@ export class Calendar {
 
             if (dayData.isHoliday) {
                 cell.classList.add('day-red'); // Visual red
-                if (this.isAdmin) {
+                if (this.canEditSlots) {
                     cell.title = "Ctrl+Click para quitar festivo";
                     cell.style.cursor = 'pointer';
                     cell.onclick = (e) => {
@@ -161,68 +173,97 @@ export class Calendar {
                     };
                 }
             } else {
-                // Slots
-                // Check if it is a weekend strictly by date (for visual, logic stays)
-                // If isWeekend, maybe we shouldn't allow slots?
-                // User requirement: "habrá dias en rojo... y festivos".
-                // We keep pure weekends red too?
-                // Previous logic: if (isWeekend || dayData.isHoliday)
-                // Let's stick to that.
+                // Render Events if any
+                if (dayData.events && dayData.events.length > 0) {
+                    dayData.events.forEach(event => {
+                        const eventBadge = document.createElement('div');
+                        eventBadge.className = `event-badge bg-${event.type === 'cloister' ? 'danger' : 'info'} text-white`;
+
+                        let displayTitle = event.title;
+                        if (event.time) {
+                            displayTitle = `${event.time} ${displayTitle}`;
+                        }
+
+                        eventBadge.textContent = displayTitle;
+                        eventBadge.title = event.description || event.title;
+
+                        if (event.link) {
+                            eventBadge.style.cursor = 'pointer';
+                            eventBadge.innerHTML += ' <i class="fas fa-external-link-alt small ms-1"></i>';
+                            eventBadge.onclick = (e) => {
+                                e.stopPropagation();
+                                window.open(event.link, '_blank');
+                            };
+                            eventBadge.title += ` (Ir a: ${event.link})`;
+                        }
+
+                        // Management Team Event Deletion
+                        if (this.canAddEvents) { // Helper assumption: authorized users can delete too
+                            const deleteBtn = document.createElement('i');
+                            deleteBtn.className = 'fas fa-trash small ms-2 text-white-50 delete-event-btn';
+                            deleteBtn.style.cursor = 'pointer';
+                            deleteBtn.onclick = (e) => {
+                                e.stopPropagation();
+                                if (confirm('¿Seguro que quieres borrar este evento?')) {
+                                    this.firebaseService.removeCalendarEvent(dateStr, event)
+                                        .then(() => {
+                                            // Toast helper available? Assume yes or basic alert, but UIHelpers usually global
+                                            if (window.UIHelpers) window.UIHelpers.showToast('Evento eliminado', 'success');
+                                        })
+                                        .catch(err => console.error(err));
+                                }
+                            };
+                            deleteBtn.onmouseover = () => deleteBtn.classList.remove('text-white-50');
+                            deleteBtn.onmouseout = () => deleteBtn.classList.add('text-white-50');
+                            eventBadge.appendChild(deleteBtn);
+                        }
+
+                        cell.appendChild(eventBadge);
+                    });
+                }
 
                 if (isWeekend) {
                     cell.classList.add('day-red');
-                    // Allow Admin to unmark weekend as holiday? 
-                    // Usually weekends are fixed. But let's allow Ctrl+Click to "force" open?
-                    // Complex. Let's assume weekends are fixed for now unless user asks.
-                    // But wait, user said "podré marcar dias festivos". Use the same toggle?
-                    // If I toggle holiday on a Saturday, does it become non-holiday?
-                    // My toggle logic sets `isHoliday` boolean. 
-                    // The render condition `if (isWeekend || dayData.isHoliday)` makes it always red if weekend.
-                    // So I cannot "open" a weekend with this logic.
-                    // That is probably fine.
                 } else {
                     const slots = dayData.remainingSlots !== undefined ? dayData.remainingSlots : 4;
                     const badge = document.createElement('span');
                     badge.className = `slot-badge ${this.getBadgeClass(slots)}`;
                     badge.textContent = `${slots} Huecos`;
 
-                    if (this.isAdmin) {
+                    if (this.canEditSlots) {
                         badge.classList.add('admin-interactive');
-
-                        // Interaction Handlers
                         badge.addEventListener('click', (e) => {
-                            e.stopPropagation(); // Avoid cell click if we add one
+                            e.stopPropagation();
                             if (e.ctrlKey || e.metaKey) {
-                                console.log("Ctrl/Meta + Click detected on badge");
-                                // Delegate to holiday toggle (treated as cell interaction?)
-                                // Or handle here
                                 this.firebaseService.toggleHoliday(dateStr);
                             } else {
-                                // Left Click -> Decrement
                                 if (slots > 0) this.firebaseService.updateSlot(dateStr, slots - 1);
                             }
                         });
-
                         badge.addEventListener('contextmenu', (e) => {
                             e.preventDefault();
                             e.stopPropagation();
-                            // Right Click -> Increment
                             if (slots < 4) this.firebaseService.updateSlot(dateStr, slots + 1);
                         });
-
                         badge.title = "Click: -1 | Click Dcho: +1 | Ctrl+Click: Festivo";
                     }
 
                     cell.appendChild(badge);
 
-                    // Allow cell click for turning INTO holiday even if not holiday yet
-                    if (this.isAdmin) {
+                    if (this.canEditSlots) {
                         cell.onclick = (e) => {
                             if (e.ctrlKey || e.metaKey) {
-                                console.log("Ctrl/Meta + Click detected on cell");
                                 this.firebaseService.toggleHoliday(dateStr);
                             }
                         };
+                    }
+
+                    // Management Team Event Creation
+                    if (this.canAddEvents) {
+                        cell.addEventListener('dblclick', (e) => {
+                            if (window.addCalendarEvent) window.addCalendarEvent(dateStr);
+                        });
+                        cell.title += (this.canEditSlots ? " | " : "") + "Doble click para añadir evento";
                     }
                 }
             }
