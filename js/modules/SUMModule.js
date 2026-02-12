@@ -25,15 +25,7 @@ export class SUMModule {
         this.reservations = [];
 
         // Define fixed slots
-        this.slots = [
-            { index: 0, label: '08:00 - 09:00', type: 'class' },
-            { index: 1, label: '09:00 - 10:00', type: 'class' },
-            { index: 2, label: '10:00 - 11:00', type: 'class' },
-            { index: 3, label: '11:00 - 11:30 (Recreo)', type: 'break' },
-            { index: 4, label: '11:30 - 12:30', type: 'class' },
-            { index: 5, label: '12:30 - 13:30', type: 'class' },
-            { index: 6, label: '13:30 - 14:30', type: 'class' }
-        ];
+        // this.slots will be generated dynamically based on the date
 
         this.render();
     }
@@ -117,6 +109,31 @@ export class SUMModule {
         return date.toISOString().split('T')[0];
     }
 
+    getSlotsForDate(date) {
+        const slots = [
+            { index: 0, label: '08:00 - 09:00', type: 'class' },
+            { index: 1, label: '09:00 - 10:00', type: 'class' },
+            { index: 2, label: '10:00 - 11:00', type: 'class' },
+            { index: 3, label: '11:00 - 11:30 (Recreo)', type: 'break' },
+            { index: 4, label: '11:30 - 12:30', type: 'class' },
+            { index: 5, label: '12:30 - 13:30', type: 'class' },
+            { index: 6, label: '13:30 - 14:30', type: 'class' }
+        ];
+
+        const day = date.getDay();
+        // 2 = Tuesday, 4 = Thursday
+        if (day === 2 || day === 4) {
+            slots.push(
+                { index: 7, label: '16:00 - 17:00 (Tarde)', type: 'class' },
+                { index: 8, label: '17:00 - 18:00 (Tarde)', type: 'class' },
+                { index: 9, label: '18:00 - 19:00 (Tarde)', type: 'class' },
+                { index: 10, label: '19:00 - 20:00 (Tarde)', type: 'class' }
+            );
+        }
+
+        return slots;
+    }
+
     async loadSchedule() {
         // Update Calendar UI (highlight selected) mostly requires re-render or manual class toggle
         // Simplest is to trigger calendar render if we want to ensure visual consistency
@@ -176,7 +193,7 @@ export class SUMModule {
                 <h5 class="card-title m-0">Horario para ${UIHelpers.formatDate(this.currentDate)}</h5>
             </div>
             <div class="list-group">
-                ${this.slots.map(slot => this.renderSlot(slot)).join('')}
+                ${this.getSlotsForDate(this.currentDate).map(slot => this.renderSlot(slot)).join('')}
             </div>
         `;
         container.innerHTML = `<div class="card-body">${content}</div>`;
