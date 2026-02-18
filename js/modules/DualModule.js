@@ -839,6 +839,9 @@ export class DualModule {
                         ${buildSortHeader('Ciclo', 'cycle')}
                         ${buildSortHeader('Nivel', 'level')}
                         ${buildSortHeader('Empresa', 'companyId')}
+                        ${buildSortHeader('Población', 'city')}
+                        ${buildSortHeader('Coche', 'hasCar')}
+                        ${buildSortHeader('Inglés', 'englishLevel')}
                         ${buildSortHeader('Tutor Docente', 'tutorName')}
                         <th>Fechas</th>
                         <th>Acciones</th>
@@ -885,6 +888,9 @@ export class DualModule {
                             <td><span class="badge bg-white text-dark border">${s.cycle || '-'}</span></td>
                             <td><span class="badge bg-white text-dark border">${s.level || '-'}</span></td>
                             <td>${companyHtml}</td>
+                            <td>${s.city || '-'}</td>
+                            <td>${s.hasCar ? '<i class="fas fa-car text-success" title="Sí"></i>' : '<span class="text-muted text-opacity-25"><i class="fas fa-car"></i></span>'}</td>
+                            <td>${s.englishLevel || '-'}</td>
                             <td><div class="small text-primary fw-bold">${s._tutorName}</div></td>
                             <td>${s.startDate} a ${s.endDate}</td>
                             <td>
@@ -1039,6 +1045,24 @@ export class DualModule {
                                 <label class="form-label">Horario</label>
                                 <input type="text" class="form-control" id="st-schedule" value="${student?.schedule || ''}" placeholder="L-V 8:00-14:00">
                             </div>
+
+                            <div class="row">
+                                <div class="col-md-5 mb-3">
+                                    <label class="form-label">Población / Residencia</label>
+                                    <input type="text" class="form-control" id="st-city" value="${student?.city || ''}" placeholder="Ej: Dos Hermanas">
+                                </div>
+                                <div class="col-md-3 mb-3">
+                                    <label class="form-label">¿Tiene Coche?</label>
+                                    <select class="form-select" id="st-has-car">
+                                        <option value="false" ${!student?.hasCar ? 'selected' : ''}>No</option>
+                                        <option value="true" ${student?.hasCar ? 'selected' : ''}>Sí</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-4 mb-3">
+                                    <label class="form-label">Nivel Inglés</label>
+                                    <input type="text" class="form-control" id="st-english" value="${student?.englishLevel || ''}" placeholder="Ej: B1, B2...">
+                                </div>
+                            </div>
                             <div class="mb-3">
                                 <label class="form-label">Empresa</label>
                                 <select class="form-select" id="st-company">
@@ -1107,6 +1131,9 @@ export class DualModule {
                 cycle: document.getElementById('st-cycle').value,
                 level: document.getElementById('st-level').value,
                 schedule: document.getElementById('st-schedule').value,
+                city: document.getElementById('st-city').value,
+                hasCar: document.getElementById('st-has-car').value === 'true',
+                englishLevel: document.getElementById('st-english').value,
                 companyId: document.getElementById('st-company').value,
                 tutorId: tutorId,
                 tutorName: tutorId ? tutorName : null,
