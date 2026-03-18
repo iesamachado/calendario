@@ -843,6 +843,7 @@ export class DualModule {
                         ${buildSortHeader('Coche', 'hasCar')}
                         ${buildSortHeader('Inglés', 'englishLevel')}
                         ${buildSortHeader('Tutor Docente', 'tutorName')}
+                        <th>Estado</th>
                         <th>Fechas</th>
                         <th>Acciones</th>
                     </tr>
@@ -872,7 +873,11 @@ export class DualModule {
             // Row Color Logic
             let rowClass = '';
             if (company) {
-                rowClass = 'table-success'; // Green: Assigned
+                if (s.dualStatus === 'Convenio Subido a Séneca') {
+                    rowClass = 'table-success-intense';
+                } else {
+                    rowClass = 'table-success'; // Green: Assigned
+                }
             } else if (s.status === 'in_process') {
                 rowClass = 'table-warning'; // Yellow: In Process
             } else {
@@ -892,6 +897,7 @@ export class DualModule {
                             <td>${s.hasCar ? '<i class="fas fa-car text-success" title="Sí"></i>' : '<span class="text-muted text-opacity-25"><i class="fas fa-car"></i></span>'}</td>
                             <td>${s.englishLevel || '-'}</td>
                             <td><div class="small text-primary fw-bold">${s._tutorName}</div></td>
+                            <td><span class="badge bg-white text-dark border">${s.dualStatus || '-'}</span></td>
                             <td>${s.startDate} a ${s.endDate}</td>
                             <td>
                                 <div class="d-flex gap-1" onclick="event.stopPropagation()">
@@ -1080,6 +1086,17 @@ export class DualModule {
                                 </select>
                             </div>
                             <div class="mb-3">
+                                <label class="form-label">Estado del Convenio</label>
+                                <select class="form-select" id="st-dual-status">
+                                    <option value="">- No iniciado -</option>
+                                    <option value="Convenio realizado" ${student?.dualStatus === 'Convenio realizado' ? 'selected' : ''}>Convenio realizado</option>
+                                    <option value="Convenio Firmado por el centro" ${student?.dualStatus === 'Convenio Firmado por el centro' ? 'selected' : ''}>Convenio Firmado por el centro</option>
+                                    <option value="Convenio Enviado a la empresa" ${student?.dualStatus === 'Convenio Enviado a la empresa' ? 'selected' : ''}>Convenio Enviado a la empresa</option>
+                                    <option value="Convenio Firmado en la empresa" ${student?.dualStatus === 'Convenio Firmado en la empresa' ? 'selected' : ''}>Convenio Firmado en la empresa</option>
+                                    <option value="Convenio Subido a Séneca" ${student?.dualStatus === 'Convenio Subido a Séneca' ? 'selected' : ''}>Convenio Subido a Séneca</option>
+                                </select>
+                            </div>
+                            <div class="mb-3">
                                 <label class="form-label">Posible Empresa / Observaciones</label>
                                 <input type="text" class="form-control" id="st-possible-company" value="${student?.possibleCompany || ''}" placeholder="Nombre de empresa tentativa o notas...">
                             </div>
@@ -1140,6 +1157,7 @@ export class DualModule {
                 startDate: document.getElementById('st-start').value,
                 endDate: document.getElementById('st-end').value,
                 status: document.getElementById('st-status').value,
+                dualStatus: document.getElementById('st-dual-status').value,
                 possibleCompany: document.getElementById('st-possible-company').value
             };
 
@@ -1721,6 +1739,119 @@ export class DualModule {
                     `).join('')}
                 </tbody>
             </table>
+
+            <h5 class="fw-bold mt-5 mb-3"><i class="fas fa-chart-pie me-2"></i>Resumen de Alumnado por Ciclo y Curso</h5>
+            <div class="row">
+                <div class="col-12">
+                    <table class="table table-sm table-bordered align-middle mb-4">
+                        <thead class="table-light text-center">
+                            <tr>
+                                <th rowspan="2">Ciclo / Nivel</th>
+                                <th colspan="4" class="bg-light bg-opacity-50">Estado de Asignación</th>
+                                <th rowspan="2" class="table-dark text-white">TOTAL</th>
+                            </tr>
+                            <tr>
+                                <th class="text-success"><i class="fas fa-check-circle me-1"></i>Asignado</th>
+                                <th class="text-warning"><i class="fas fa-spinner me-1"></i>En Proceso</th>
+                                <th class="text-danger"><i class="fas fa-clock me-1"></i>Pendiente</th>
+                                <th class="text-muted">Desconocido</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${(() => {
+            // Group students by Cycle and Level
+            const cycleStats = {};
+            const courseTotals = {}; // Totals per academic year (e.g. 2025-2026)
+
+            this.students.forEach(s => {
+                const key = `${s.cycle || 'Sin Ciclo'} - ${s.level || '?'}`;
+                if (!cycleStats[key]) {
+                    cycleStats[key] = { assigned: 0, in_process: 0, pending: 0, unknown: 0, total: 0 };
+                }
+
+                cycleStats[key].total++;
+
+                if (s.companyId) {
+                    cycleStats[key].assigned++;
+                } else if (s.status === 'in_process') {
+                    cycleStats[key].in_process++;
+                } else if (s.status === 'pending') {
+                    cycleStats[key].pending++;
+                } else {
+                    cycleStats[key].unknown++;
+                }
+
+                // Course Totals
+                const course = s.course || 'Desconocido';
+                if (!courseTotals[course]) courseTotals[course] = 0;
+                courseTotals[course]++;
+            });
+
+            // Sort keys
+            const sortedKeys = Object.keys(cycleStats).sort();
+
+            let html = sortedKeys.map(key => {
+                const stat = cycleStats[key];
+                return `
+                                    <tr class="text-center">
+                                        <td class="text-start fw-bold ps-3">${key}</td>
+                                        <td><span class="badge bg-success">${stat.assigned}</span></td>
+                                        <td><span class="badge bg-warning text-dark">${stat.in_process}</span></td>
+                                        <td><span class="badge bg-danger">${stat.pending}</span></td>
+                                        <td><span class="badge bg-secondary">${stat.unknown}</span></td>
+                                        <td class="fw-bold table-light">${stat.total}</td>
+                                    </tr>
+                                `;
+            }).join('');
+
+            // Add Grand Total Row
+            const grandTotal = this.students.reduce((acc, s) => {
+                if (s.companyId) acc.assigned++;
+                else if (s.status === 'in_process') acc.in_process++;
+                else if (s.status === 'pending') acc.pending++;
+                else acc.unknown++;
+                acc.total++;
+                return acc;
+            }, { assigned: 0, in_process: 0, pending: 0, unknown: 0, total: 0 });
+
+            html += `
+                                <tr class="text-center table-dark text-white fw-bold">
+                                    <td class="text-start ps-3">TOTAL GLOBAL</td>
+                                    <td>${grandTotal.assigned}</td>
+                                    <td>${grandTotal.in_process}</td>
+                                    <td>${grandTotal.pending}</td>
+                                    <td>${grandTotal.unknown}</td>
+                                    <td>${grandTotal.total}</td>
+                                </tr>
+                            `;
+
+            return html;
+        })()}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="row mb-5">
+                <div class="col-md-6">
+                    <div class="card bg-light border-0 shadow-sm">
+                        <div class="card-body py-2">
+                            <h6 class="fw-bold mb-2">Total Alumnos por Curso Escolar</h6>
+                            <div class="d-flex flex-wrap gap-3">
+                                ${Object.keys(this.students.reduce((acc, s) => {
+            const c = s.course || 'Desconocido';
+            acc[c] = (acc[c] || 0) + 1;
+            return acc;
+        }, {}))
+            .sort().map(course => {
+                const count = this.students.filter(s => (s.course || 'Desconocido') === course).length;
+                return `<div><span class="badge bg-primary me-1">${course}:</span> <span class="fw-bold text-primary">${count}</span></div>`;
+            }).join('')}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
             
             <h6 class="fw-bold mt-4 mb-3">Resumen de Horas de Dedicación</h6>
             <table class="table table-sm table-bordered table-hover align-middle">

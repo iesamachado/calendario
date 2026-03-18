@@ -97,6 +97,30 @@ body {
     color: #6c757d;
 }
 
+/* DUAL Module Intense Green */
+.table-success-intense,
+.table-success-intense > td,
+.table-success-intense > th {
+    background-color: #198754 !important; /* Classroom/Success Green */
+    color: white !important;
+}
+
+/* Ensure blue links and primary text turn white in these rows */
+.table-success-intense a,
+.table-success-intense .text-primary,
+.table-success-intense .text-muted {
+    color: white !important;
+}
+
+/* Maintain dark text for badges with white background */
+.table-success-intense .badge.bg-white {
+    color: #212529 !important;
+}
+
+.table-success-intense:hover > td {
+    background-color: #157347 !important;
+}
+
 /* Compact Calendar for selection ONLY */
 .calendar-compact .calendar-day {
     min-height: 40px !important;
