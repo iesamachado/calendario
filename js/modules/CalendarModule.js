@@ -2,13 +2,14 @@ import { Calendar } from '../Calendar.js';
 import { UIHelpers } from '../UIHelpers.js';
 
 export class CalendarModule {
-    constructor(container, firebaseService, user, isAdmin, userRoles, moduleConfig) {
+    constructor(container, firebaseService, user, isAdmin, userRoles, moduleConfig, courseId) {
         this.container = container;
         this.firebaseService = firebaseService;
         this.user = user;
         this.isAdmin = isAdmin;
         this.userRoles = userRoles || [];
         this.moduleConfig = moduleConfig || {};
+        this.courseId = courseId;
         this.canEditSlots = this.userRoles.includes('director');
         this.canAddEvents = this.userRoles.includes('equipo_directivo');
 
@@ -101,7 +102,7 @@ export class CalendarModule {
         }, this.firebaseService, this.user, this.userRoles, {
             showNavigationIcons: true,
             moduleConfig: this.moduleConfig // Pass config for visibility checks
-        }); // Pass roles
+        }, this.courseId); // Pass roles
 
         // Attach global function for event creation
         window.addCalendarEvent = (dateStr) => this.showAddEventModal(dateStr);
@@ -194,7 +195,7 @@ export class CalendarModule {
                     type,
                     time: time || null,
                     link: link || null
-                });
+                }, this.courseId, this.courseId);
                 UIHelpers.showToast('Evento añadido', 'success');
                 bsModal.hide();
                 // Calendar list updates automatically via listener

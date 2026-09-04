@@ -2,7 +2,8 @@ import { UIHelpers } from '../UIHelpers.js';
 import { Calendar } from '../Calendar.js';
 
 export class LaptopCartsModule {
-    constructor(container, firebaseService, user, userRoles, isAdmin) {
+    constructor(container, firebaseService, user, userRoles, isAdmin, courseId) {
+        this.courseId = courseId;
         this.container = container;
         this.firebaseService = firebaseService;
         this.user = user;
@@ -101,7 +102,7 @@ export class LaptopCartsModule {
             nextBtn: document.getElementById('carts-next-month')
         }, this.firebaseService, this.user, this.userRoles, {
             fetchData: async (year, month) => {
-                return await this.firebaseService.getMonthAvailability(year, month);
+                return await this.firebaseService.getMonthAvailability(year, month, this.courseId);
             },
             onDateSelect: (dateStr) => {
                 this.currentDate = new Date(dateStr);
@@ -129,7 +130,7 @@ export class LaptopCartsModule {
                     cell.style.cursor = 'pointer';
                 }
             }
-        });
+        }, this.courseId);
 
         // Initial Load
         await this.loadReservationsView();
@@ -165,7 +166,7 @@ export class LaptopCartsModule {
             // Ideally should check cache or verify if carts list changed
             this.carts = await this.firebaseService.getCarts();
             this.carts.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
-            this.reservations = await this.firebaseService.getCartReservations(dateStr);
+            this.reservations = await this.firebaseService.getCartReservations(dateStr, this.courseId);
             this.renderGrid(container);
         } catch (error) {
             console.error(error);
@@ -363,7 +364,8 @@ export class LaptopCartsModule {
                 cartId,
                 this.user.uid,
                 this.user.displayName || this.user.email.split('@')[0],
-                comment
+                comment,
+                this.courseId
             );
             UIHelpers.showToast('Reserva realizada', 'success');
             await this.loadReservationsView();
@@ -410,7 +412,7 @@ export class LaptopCartsModule {
             const rangeStart = targetDates[0];
             const rangeEnd = targetDates[targetDates.length - 1];
 
-            const existingReservations = await this.firebaseService.getCartReservationsInRange(rangeStart, rangeEnd);
+            const existingReservations = await this.firebaseService.getCartReservationsInRange(rangeStart, rangeEnd, this.courseId);
 
             const conflicts = [];
 
@@ -441,7 +443,8 @@ export class LaptopCartsModule {
                     cartId,
                     this.user.uid,
                     this.user.displayName || this.user.email.split('@')[0],
-                    comment
+                comment,
+                this.courseId
                 )
             );
 
@@ -505,7 +508,7 @@ export class LaptopCartsModule {
 
             try {
                 if (type === 'single') {
-                    await this.firebaseService.cancelCartReservation(reservationId);
+                    await this.firebaseService.cancelCartReservation(reservationId, this.courseId);
                     UIHelpers.showToast('Reserva cancelada', 'success');
                 } else {
                     if (!confirm('¿Estás seguro de que quieres borrar TODAS las reservas futuras de esta serie?')) return;
@@ -516,7 +519,7 @@ export class LaptopCartsModule {
                         reservation.slotIndex,
                         reservation.date,
                         this.user.uid
-                    );
+                    , this.courseId);
 
                     if (futureReservations.length === 0) {
                         UIHelpers.showToast('No se encontraron reservas futuras.', 'info');
@@ -524,7 +527,7 @@ export class LaptopCartsModule {
                     }
 
                     UIHelpers.showToast(`Eliminando ${futureReservations.length} reservas...`, 'info');
-                    const promises = futureReservations.map(r => this.firebaseService.cancelCartReservation(r.id));
+                    const promises = futureReservations.map(r => this.firebaseService.cancelCartReservation(r.id, this.courseId));
                     await Promise.all(promises);
                     UIHelpers.showToast('Reservas eliminadas correctamente', 'success');
                 }

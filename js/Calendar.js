@@ -1,7 +1,8 @@
 import { MONTHS, DAYS, getDaysInMonth, getFirstDayOfMonth } from './utils.js';
 
 export class Calendar {
-    constructor(containerOrConfig, firebaseService, user, userRoles = [], options = {}) {
+    constructor(containerOrConfig, firebaseService, user, userRoles = [], options = {}, courseId) {
+        this.courseId = courseId;
         // Support legacy constructor signature: (containerId, firebaseService, ...)
         // vs New signature: (domElementsConfig, firebaseService, ..., options)
 
@@ -101,7 +102,7 @@ export class Calendar {
             this.unsubscribe = this.firebaseService.subscribeToMonth(this.currentYear, this.currentMonth, (data) => {
                 this.availabilityData = data;
                 this.render();
-            });
+            }, this.courseId);
         }
     }
 
@@ -218,7 +219,7 @@ export class Calendar {
                 cell.addEventListener('click', (e) => {
                     e.stopPropagation();
                     if (e.ctrlKey || e.metaKey) { // Support Mac Command key too
-                        this.firebaseService.toggleHoliday(dateStr);
+                        this.firebaseService.toggleHoliday(dateStr, this.courseId);
                     }
                 });
             }
@@ -343,15 +344,15 @@ export class Calendar {
                     badge.addEventListener('click', (e) => {
                         e.stopPropagation();
                         if (e.ctrlKey || e.metaKey) {
-                            this.firebaseService.toggleHoliday(dateStr);
+                            this.firebaseService.toggleHoliday(dateStr, this.courseId);
                         } else {
-                            if (slots > 0) this.firebaseService.updateSlot(dateStr, slots - 1);
+                            if (slots > 0) this.firebaseService.updateSlot(dateStr, slots - 1, this.courseId);
                         }
                     });
                     badge.addEventListener('contextmenu', (e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        if (slots < 4) this.firebaseService.updateSlot(dateStr, slots + 1);
+                        if (slots < 4) this.firebaseService.updateSlot(dateStr, slots + 1, this.courseId);
                     });
                     badge.title = "Click: -1 | Click Dcho: +1 | Ctrl+Click: Festivo";
                 }
@@ -416,7 +417,7 @@ export class Calendar {
                             const currentId = dayData.driveLink || '';
                             const newId = prompt('ID del documento de Drive (vacío para borrar):', currentId);
                             if (newId !== null) {
-                                this.firebaseService.setDriveLink(dateStr, newId);
+                                this.firebaseService.setDriveLink(dateStr, newId, this.courseId);
                             }
                             return;
                         }
@@ -430,7 +431,7 @@ export class Calendar {
                         if ((e.ctrlKey || e.metaKey) && e.button === 0) {
                             e.preventDefault();
                             e.stopPropagation();
-                            this.firebaseService.toggleHoliday(dateStr);
+                            this.firebaseService.toggleHoliday(dateStr, this.courseId);
                             return;
                         }
 
@@ -438,7 +439,7 @@ export class Calendar {
                         if (e.button === 2) {
                             e.preventDefault();
                             e.stopPropagation();
-                            if (slots < 4) this.firebaseService.updateSlot(dateStr, slots + 1);
+                            if (slots < 4) this.firebaseService.updateSlot(dateStr, slots + 1, this.courseId);
                         }
                     });
                     cell.addEventListener('contextmenu', (e) => e.preventDefault());

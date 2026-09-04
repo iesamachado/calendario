@@ -1,7 +1,11 @@
 import { UIHelpers } from '../UIHelpers.js';
 
 export class DualModule {
-    constructor(container, firebaseService, user, userRoles) {
+    constructor(container, firebaseService, user, userRoles, courseId, coursesList = [], currentCourse = null, isAdmin = false) {
+        this.courseId = courseId;
+        this.coursesList = coursesList;
+        this.currentCourse = currentCourse;
+        this.isAdmin = isAdmin;
         this.container = container;
         this.firebaseService = firebaseService;
         this.user = user;
@@ -36,7 +40,19 @@ export class DualModule {
             <div class="module-header">
                 <h2><i class="fas fa-user-graduate me-2"></i>Gestión Dual</h2>
                 <p class="text-muted">Administración de empresas y alumnos de FP Dual</p>
+            
             </div>
+
+            <!-- Selector de curso para Dual -->
+            <div id="dual-course-selector-bar" class="${this.coursesList.length > 1 ? '' : 'd-none'} alert alert-secondary py-2 d-flex align-items-center gap-3 mb-3">
+                <i class="fas fa-archive"></i>
+                <label class="fw-bold mb-0 small">Consultar curso:</label>
+                <select id="dual-course-select" class="form-select form-select-sm" style="max-width: 200px;">
+                    ${this.coursesList.map(c => `<option value="${c.id}" ${c.id === this.courseId ? 'selected' : ''}>${c.label}${c.isCurrent ? ' (Actual)' : ''}</option>`).join('')}
+                </select>
+                ${this.courseId !== this.currentCourse ? '<span class="badge bg-warning text-dark"><i class="fas fa-eye me-1"></i>Solo lectura (Histórico)</span>' : ''}
+            </div>
+
 
             <ul class="nav nav-tabs mb-4" id="dualTabs" role="tablist">
                 <li class="nav-item">
@@ -180,7 +196,16 @@ export class DualModule {
         // Initial Load
         this.loadCompanies();
         // Pre-load config in background as it is needed for dropdowns
-        this.config = await this.firebaseService.getDualConfig();
+        this.config = await this.firebaseService.getDualConfig(this.courseId);
+
+        // Course Selector Listener
+        const dualSelect = document.getElementById('dual-course-select');
+        if (dualSelect) {
+            dualSelect.addEventListener('change', (e) => {
+                this.courseId = e.target.value;
+                this.render();
+            });
+        }
     }
 
     // ==================== COMPANIES ====================
@@ -192,8 +217,8 @@ export class DualModule {
             // Always reload students to ensure 'hosting' status is accurate if assignments changed
             let allUsers = [];
             [this.companies, this.students, allUsers] = await Promise.all([
-                this.firebaseService.getCompanies(),
-                this.firebaseService.getDualStudents(null),
+                this.firebaseService.getCompanies(this.courseId),
+                this.firebaseService.getDualStudents(null, this.courseId),
                 this.firebaseService.getAllUsers()
             ]);
 
@@ -659,9 +684,9 @@ export class DualModule {
 
             try {
                 if (isEdit) {
-                    await this.firebaseService.updateCompany(company.id, data);
+                    await this.firebaseService.updateCompany(company.id, data, this.courseId);
                 } else {
-                    await this.firebaseService.createCompany(data);
+                    await this.firebaseService.createCompany(data, this.courseId);
                 }
                 UIHelpers.showToast('Empresa guardada', 'success');
                 bsModal.hide();
@@ -676,7 +701,7 @@ export class DualModule {
             document.getElementById('btn-delete-comp').addEventListener('click', async () => {
                 if (await UIHelpers.confirm('¿Seguro que quieres eliminar esta empresa?')) {
                     try {
-                        await this.firebaseService.deleteCompany(company.id);
+                        await this.firebaseService.deleteCompany(company.id, this.courseId);
                         UIHelpers.showToast('Empresa eliminada', 'success');
                         bsModal.hide();
                         this.loadCompanies();
@@ -692,7 +717,7 @@ export class DualModule {
     }
 
     async showCompanyHistory(company) {
-        const students = await this.firebaseService.getDualStudents(null);
+        const students = await this.firebaseService.getDualStudents(null, this.courseId);
         const history = students.filter(s => s.companyId === company.id);
 
         const modal = document.createElement('div');
@@ -741,10 +766,10 @@ export class DualModule {
     async loadStudents() {
         const container = document.getElementById('students-table-container');
         try {
-            this.students = await this.firebaseService.getDualStudents(null);
+            this.students = await this.firebaseService.getDualStudents(null, this.courseId);
 
             if (this.companies.length === 0) {
-                this.companies = await this.firebaseService.getCompanies();
+                this.companies = await this.firebaseService.getCompanies(this.courseId);
             }
 
             this.renderStudentsTable();
@@ -1010,7 +1035,7 @@ export class DualModule {
         }
 
         // Ensure config is loaded
-        if (!this.config.cycles.length) this.config = await this.firebaseService.getDualConfig();
+        if (!this.config.cycles.length) this.config = await this.firebaseService.getDualConfig(this.courseId);
 
         const modal = document.createElement('div');
         modal.className = 'modal fade';
@@ -1163,9 +1188,9 @@ export class DualModule {
 
             try {
                 if (isEdit) {
-                    await this.firebaseService.updateDualStudent(student.id, data);
+                    await this.firebaseService.updateDualStudent(student.id, data, this.courseId);
                 } else {
-                    await this.firebaseService.createDualStudent(data);
+                    await this.firebaseService.createDualStudent(data, this.courseId);
                 }
                 UIHelpers.showToast('Alumno guardado', 'success');
                 bsModal.hide();
@@ -1179,7 +1204,7 @@ export class DualModule {
         if (isEdit) {
             document.getElementById('btn-delete-st').addEventListener('click', async () => {
                 if (await UIHelpers.confirm('¿Eliminar alumno?')) {
-                    await this.firebaseService.deleteDualStudent(student.id);
+                    await this.firebaseService.deleteDualStudent(student.id, this.courseId);
                     bsModal.hide();
                     this.loadStudents();
                 }
@@ -1230,7 +1255,7 @@ export class DualModule {
         input.value = '';
 
         try {
-            await this.firebaseService.updateDualConfig(this.config);
+            await this.firebaseService.updateDualConfig(this.config, this.courseId);
             this.renderConfigList(type, this.config[type]);
         } catch (e) {
             console.error(e);
@@ -1243,7 +1268,7 @@ export class DualModule {
 
         this.config[type].splice(index, 1);
         try {
-            await this.firebaseService.updateDualConfig(this.config);
+            await this.firebaseService.updateDualConfig(this.config, this.courseId);
             this.renderConfigList(type, this.config[type]);
         } catch (e) {
             console.error(e);
@@ -1446,7 +1471,7 @@ export class DualModule {
         let imported = 0;
         for (const s of selected) {
             try {
-                await this.firebaseService.createDualStudent(s);
+                await this.firebaseService.createDualStudent(s, this.courseId);
                 imported++;
             } catch (e) {
                 console.error("Error importing", s.name, e);
@@ -1516,14 +1541,14 @@ export class DualModule {
 
                 if (type === 'company') {
                     // 1. Company Interactions
-                    const companyInteractions = await this.firebaseService.getDualInteractions(entity.id);
+                    const companyInteractions = await this.firebaseService.getDualInteractions(entity.id, this.courseId);
                     companyInteractions.forEach(i => i._sourceLabel = 'Empresa (Prospección)');
 
                     // 2. Student Interactions
                     const assignedStudents = this.students.filter(s => s.companyId === entity.id);
 
                     const studentPromises = assignedStudents.map(async s => {
-                        const sInts = await this.firebaseService.getDualInteractions(s.id);
+                        const sInts = await this.firebaseService.getDualInteractions(s.id, this.courseId);
                         sInts.forEach(i => {
                             i._sourceLabel = `Alumno: ${s.name}`;
                             i._isStudent = true;
@@ -1536,7 +1561,7 @@ export class DualModule {
 
                     interactions = [...companyInteractions, ...allStudentInteractions];
                 } else {
-                    interactions = await this.firebaseService.getDualInteractions(entity.id);
+                    interactions = await this.firebaseService.getDualInteractions(entity.id, this.courseId);
                 }
 
                 // Sort by date desc
@@ -1591,7 +1616,7 @@ export class DualModule {
                 listContainer.querySelectorAll('.btn-del-int').forEach(btn => {
                     btn.addEventListener('click', async () => {
                         if (confirm('¿Borrar seguimiento?')) {
-                            await this.firebaseService.deleteDualInteraction(btn.dataset.id);
+                            await this.firebaseService.deleteDualInteraction(btn.dataset.id, this.courseId);
                             loadInteractions();
                         }
                     });
@@ -1623,7 +1648,7 @@ export class DualModule {
             };
 
             try {
-                await this.firebaseService.addDualInteraction(data);
+                await this.firebaseService.addDualInteraction(data, this.courseId);
                 document.getElementById('int-notes').value = '';
                 loadInteractions();
             } catch (error) {
@@ -1643,8 +1668,8 @@ export class DualModule {
                 const allUsers = await this.firebaseService.getAllUsers();
                 this.users = allUsers.filter(u => (u.roles || []).includes('equipo_dual'));
             }
-            if (this.students.length === 0) this.students = await this.firebaseService.getDualStudents(null);
-            if (this.companies.length === 0) this.companies = await this.firebaseService.getCompanies();
+            if (this.students.length === 0) this.students = await this.firebaseService.getDualStudents(null, this.courseId);
+            if (this.companies.length === 0) this.companies = await this.firebaseService.getCompanies(this.courseId);
 
             this.renderDualTeamTable();
         } catch (error) {
@@ -2002,7 +2027,7 @@ export class DualModule {
 
         // Load History
         try {
-            const interactions = await this.firebaseService.getInteractionsByAuthor(user.uid);
+            const interactions = await this.firebaseService.getInteractionsByAuthor(user.uid, this.courseId);
 
             const historyContainer = document.getElementById('history-container');
             if (interactions.length === 0) {

@@ -2,7 +2,8 @@ import { UIHelpers } from '../UIHelpers.js';
 import { Calendar } from '../Calendar.js';
 
 export class SUMModule {
-    constructor(container, firebaseService, user, userRoles, isAdmin) {
+    constructor(container, firebaseService, user, userRoles, isAdmin, courseId) {
+        this.courseId = courseId;
         this.container = container;
         this.firebaseService = firebaseService;
         this.user = user;
@@ -71,7 +72,7 @@ export class SUMModule {
         }, this.firebaseService, this.user, this.userRoles, {
             // Disable default fetching, we just want navigation
             fetchData: async (year, month) => {
-                return await this.firebaseService.getMonthAvailability(year, month);
+                return await this.firebaseService.getMonthAvailability(year, month, this.courseId);
             },
             onDateSelect: (dateStr) => {
                 this.currentDate = new Date(dateStr);
@@ -100,7 +101,7 @@ export class SUMModule {
                     cell.style.cursor = 'pointer';
                 }
             }
-        });
+        }, this.courseId);
 
         await this.loadSchedule();
     }
@@ -160,7 +161,7 @@ export class SUMModule {
                     </div>
                 </div>`;
 
-            this.reservations = await this.firebaseService.getSUMReservations(dateStr);
+            this.reservations = await this.firebaseService.getSUMReservations(dateStr, this.courseId);
             this.renderSchedule(container, dateStr);
         } catch (error) {
             console.error('Error loading schedule:', error);
@@ -263,7 +264,7 @@ export class SUMModule {
                 slotLabel,
                 title,
                 this.user.uid,
-                this.user.displayName || this.user.email.split('@')[0]
+                this.user.displayName || this.user.email.split('@')[0], this.courseId
             );
             UIHelpers.showToast('Reserva realizada', 'success');
             await this.loadSchedule();
@@ -277,7 +278,7 @@ export class SUMModule {
         if (!confirm('¿Seguro que quieres cancelar esta reserva?')) return;
 
         try {
-            await this.firebaseService.cancelSUMReservation(reservationId);
+            await this.firebaseService.cancelSUMReservation(reservationId, this.courseId);
             UIHelpers.showToast('Reserva cancelada', 'success');
             await this.loadSchedule();
         } catch (error) {

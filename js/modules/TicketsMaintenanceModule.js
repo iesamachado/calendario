@@ -1,7 +1,8 @@
 import { UIHelpers } from '../UIHelpers.js';
 
 export class TicketsMaintenanceModule {
-    constructor(container, firebaseService, user, userRoles, isAdmin) {
+    constructor(container, firebaseService, user, userRoles, isAdmin, courseId) {
+        this.courseId = courseId;
         this.container = container;
         this.firebaseService = firebaseService;
         this.user = user;
@@ -231,7 +232,7 @@ export class TicketsMaintenanceModule {
                 btnDelete.addEventListener('click', async () => {
                     if (confirm('¿Estás seguro de que deseas eliminar esta petición?')) {
                         try {
-                            await this.firebaseService.deleteTicket('maintenance', ticketId);
+                            await this.firebaseService.deleteTicket('maintenance', ticketId, this.courseId);
                             UIHelpers.showToast('Petición eliminada', 'success');
                             bsModal.hide();
                             await this.loadTicketsList();
@@ -354,7 +355,7 @@ export class TicketsMaintenanceModule {
         // Helper for update
         this.updateTicketStatus = async (ticketId, updates, modalInstance) => {
             try {
-                await this.firebaseService.updateTicket('maintenance', ticketId, updates);
+                await this.firebaseService.updateTicket('maintenance', ticketId, updates, this.courseId);
                 UIHelpers.showToast('Incidencia actualizada', 'success');
                 modalInstance.hide();
                 await this.loadTicketsList();
@@ -457,7 +458,7 @@ export class TicketsMaintenanceModule {
             const userData = users.find(u => u.uid === this.user.uid);
             const userDept = userData ? userData.department : null;
 
-            const tickets = await this.firebaseService.getTickets('maintenance', this.user.uid, this.userRoles, userDept);
+            const tickets = await this.firebaseService.getTickets('maintenance', this.user.uid, this.userRoles, userDept, this.courseId);
             this.tickets = tickets;
 
             if (tickets.length === 0) {
@@ -686,7 +687,7 @@ export class TicketsMaintenanceModule {
                     // but we can enforce it or assume service handles it. Service handles it.
                     // IMPORTANT: 'department' field is used for filtering.
                     department: targetUserDept || 'Sin departamento'
-                }, targetUserId, targetUserName, targetUserDept || 'Sin departamento');
+                }, targetUserId, targetUserName, targetUserDept || 'Sin departamento', this.courseId);
 
                 UIHelpers.showToast(`Petición ${result.ticketNumber} creada correctamente`, 'success');
                 bsModal.hide();
@@ -713,7 +714,7 @@ export class TicketsMaintenanceModule {
             // Manager role is 'equipo_mantenimiento'. They see all.
             // Fetch tickets and departments
             const [allTickets, departments] = await Promise.all([
-                this.firebaseService.getTickets('maintenance', this.user.uid, this.userRoles),
+                this.firebaseService.getTickets('maintenance', this.user.uid, this.userRoles, null, this.courseId),
                 this.firebaseService.getAllDepartments()
             ]);
 

@@ -1,20 +1,21 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // Funciones de ayuda
+
+    // ==================== HELPER FUNCTIONS ====================
+
     function isAuthenticated() {
       return request.auth != null;
     }
-    
+
     function hasRole(role) {
       return isAuthenticated() && role in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.roles;
     }
-    
+
     function hasAnyRole(roles) {
       return isAuthenticated() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.roles.hasAny(roles);
     }
-    
+
     function isAdmin() {
       return isAuthenticated() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true;
     }
@@ -23,170 +24,191 @@ service cloud.firestore {
       return hasRole('director');
     }
 
-    // Reglas para usuarios
+    function isEquipoDirectivo() {
+      return hasAnyRole(['equipo_directivo', 'director']);
+    }
+
+    function isEquipoDual() {
+      return hasRole('equipo_dual');
+    }
+
+    // Returns the current active courseId from settings/current_course
+    function currentCourse() {
+      return get(/databases/$(database)/documents/settings/current_course).data.courseId;
+    }
+
+    // True if courseId is the current active course
+    function isCurrentCourse(courseId) {
+      return courseId == currentCourse();
+    }
+
+    // True if user can READ historical data (all modules)
+    function canReadHistory() {
+      return isAdmin() || isEquipoDirectivo();
+    }
+
+    // True if user can READ Dual historical data
+    function canReadDualHistory() {
+      return isAdmin() || isEquipoDirectivo() || isEquipoDual();
+    }
+
+
+    // ==================== GLOBAL COLLECTIONS (not course-scoped) ====================
+
+    // Users
     match /users/{userId} {
       allow read: if isAuthenticated();
-      // Solo admin puede escribir/borrar cualquier usuario.
-      // Jefes de departamento pueden actualizar el departamento de un usuario si ellos son el jefe? 
-      // La "escritura" de departamento la hace el admin (o el jefe si añadimos esa regla).
-      // El requisito "Jefe de departamento puede añadir gente a su departamento" implica escritura.
-      // Pero no, solo admin edita usuarios completos. Jefe solo "añade".
-      // Vamos a permitir al admin todo.
-      allow create: if isAuthenticated() && request.auth.uid == userId; // Self registration
-      allow update: if isAuthenticated() && (request.auth.uid == userId || isAdmin() || hasRole('jefe_departamento') || hasRole('equipo_dual')); 
-      // Nota: un usuario puede actualizar su perfi, admin todo, jefe dept puede que necesite para "añadir".
-      // Limitaremos la lógica de "añadir" en el cliente, pero aquí dejamos la puerta si es necesario.
+      allow create: if isAuthenticated() && request.auth.uid == userId;
+      allow update: if isAuthenticated() && (request.auth.uid == userId || isAdmin() || hasRole('jefe_departamento') || hasRole('equipo_dual'));
       allow delete: if isAdmin();
     }
 
-    // Reglas para disponibilidad (Calendario)
-    match /availability/{dayId} {
-      allow read: if isAuthenticated();
-      // Solo directora puede cambiar días libres y festivos (Full Write)
-      allow write: if isAdmin() || isDirector();
-      
-      // Equipo Directivo: Solo gestionar eventos
-      allow update: if hasRole('equipo_directivo') && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['events']);
-      allow create: if hasRole('equipo_directivo') && request.resource.data.remainingSlots == 4 && (request.resource.data.isHoliday == false || !("isHoliday" in request.resource.data));
-    }
-
-    // Reglas para departamentos
+    // Departments
     match /departments/{deptId} {
       allow read: if isAuthenticated();
       allow write: if isAdmin();
     }
 
-    // Reglas para anuncios
-    match /announcements/{announcementId} {
-      allow read: if isAuthenticated();
-      // Equipo directivo y director pueden escribir
-      allow create: if hasAnyRole(['equipo_directivo', 'director']) || isAdmin();
-      allow update, delete: if (hasAnyRole(['equipo_directivo', 'director']) && resource.data.author == request.auth.uid) || isAdmin();
-    }
-
-    // Tickets TIC
-    match /tickets_tic/{ticketId} {
-      // Ver: Todos los autenticados (Visibilidad Global)
-      allow read: if isAuthenticated();
-      
-      // Crear: Todos
-      allow create: if isAuthenticated();
-      
-      // Borrar: Dueño si estatus es abierto y no asignado
-      allow delete: if isAuthenticated() && (
-        isAdmin() || 
-        (resource.data.requestedBy == request.auth.uid && 
-         resource.data.status == 'abierto' && 
-         (!('assignedTo' in resource.data) || resource.data.assignedTo == null || resource.data.assignedTo == "")
-        )
-      );
-      
-      // Actualizar: Equipo TIC, Admin, Dueño (solo algunos campos)
-      allow update: if isAuthenticated() && (
-        isAdmin() || 
-        hasRole('equipo_tic') || 
-        (resource.data.requestedBy == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title', 'description', 'priority']))
-      );
-    }
-
-    // Tickets Mantenimiento
-    match /tickets_maintenance/{ticketId} {
-      // Ver: Todos los autenticados (Visibilidad Global)
-      allow read: if isAuthenticated();
-      
-      allow create: if isAuthenticated();
-      
-      // Borrar: Dueño si estatus es abierto/pendiente y no asignado
-      allow delete: if isAuthenticated() && (
-        isAdmin() || 
-        (resource.data.requestedBy == request.auth.uid && 
-         (resource.data.status == 'abierto' || resource.data.status == 'pendiente_validacion') && 
-         (!('assignedTo' in resource.data) || resource.data.assignedTo == null || resource.data.assignedTo == "")
-        )
-      );
-      
-      allow update: if isAuthenticated() && (
-        isAdmin() || 
-        hasRole('equipo_mantenimiento') || 
-        hasRole('equipo_directivo') ||
-        isDirector() ||
-        (resource.data.requestedBy == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title', 'description', 'priority', 'location']))
-      );
-    }
-
-    // Configuración
-    match /settings/{settingId} {
-      allow read: if isAuthenticated();
-      allow write: if isAuthenticated(); // Para incrementar contadores
-    }
-
-    // Tickets 3D
-    match /tickets_3d/{ticketId} {
-      // Ver: Todos los autenticados (Visibilidad Global)
-      allow read: if isAuthenticated();
-      
-      allow create: if isAuthenticated();
-      
-      // Borrar: Dueño si estatus es abierto y no asignado
-      allow delete: if isAuthenticated() && (
-        isAdmin() || 
-        (resource.data.requestedBy == request.auth.uid && 
-         resource.data.status == 'abierto' && 
-         (!('assignedTo' in resource.data) || resource.data.assignedTo == null || resource.data.assignedTo == "")
-        )
-      );
-      
-      allow update: if isAuthenticated() && (
-        isAdmin() || 
-        hasRole('equipo_3d') || 
-        (resource.data.requestedBy == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title', 'description', 'priority', 'stlUrl', 'notes']))
-      );
-    }
-
-    // Reserva SUM
-    match /sum_reservations/{reservationId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
-      allow delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin() || hasRole('equipo_tic'));
-    }
-
-    // Carros de Portátiles - Inventario
-    match /carts/{cartId} {
-      allow read: if isAuthenticated();
-      // Solo Equipo TIC o Admin pueden gestionar el inventario
-      allow write: if isAdmin() || hasRole('equipo_tic');
-    }
-
-    // Carros de Portátiles - Reservas
-    match /cart_reservations/{reservationId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
-      allow delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin() || hasRole('equipo_tic'));
-    }
-
-    // Modulo DUAL
-    match /companies/{companyId} {
-      allow read: if isAuthenticated();
-      allow write: if isAdmin() || hasRole('equipo_dual');
-    }
-
-    match /dual_students/{studentId} {
-      // Read: Equipo Dual y Admin. Tal vez tutores propios? 
-      // Por simplicidad de la primera versiÃ³n, restringido a equipo dual.
-      allow read: if isAuthenticated() && (isAdmin() || hasRole('equipo_dual'));
-      allow write: if isAdmin() || hasRole('equipo_dual');
-    }
-
-    // Dual Interactions
-    match /dual_interactions/{interactionId} {
-      allow read: if isAuthenticated() && (isAdmin() || hasRole('equipo_dual'));
-      allow write: if isAuthenticated() && (isAdmin() || hasRole('equipo_dual'));
-    }
-
-    // Registros de acceso
+    // Login logs
     match /login_logs/{logId} {
       allow create: if request.auth != null;
       allow read: if isAdmin();
+    }
+
+    // Carts inventory (global — not per course)
+    match /carts/{cartId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin() || hasRole('equipo_tic');
+    }
+
+    // Settings (global: modules config, current_course, courses_list)
+    match /settings/{settingId} {
+      allow read: if isAuthenticated();
+      // Only admins can change course settings
+      allow write: if isAdmin() || (isAuthenticated() && settingId != 'current_course' && settingId != 'courses_list');
+    }
+
+
+    // ==================== COURSE-SCOPED COLLECTIONS ====================
+
+    match /courses/{courseId} {
+
+      // --- AVAILABILITY (Calendario) ---
+      match /availability/{dayId} {
+        // Read: everyone if current course, or users with history access
+        allow read: if isAuthenticated() && (isCurrentCourse(courseId) || canReadHistory());
+
+        // Write (full): admin or director — only on current course
+        allow write: if (isAdmin() || isDirector()) && isCurrentCourse(courseId);
+
+        // Equipo Directivo: only manage events on current course
+        allow update: if isEquipoDirectivo() && isCurrentCourse(courseId)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['events']);
+        allow create: if isEquipoDirectivo() && isCurrentCourse(courseId)
+          && request.resource.data.remainingSlots == 4
+          && (request.resource.data.isHoliday == false || !("isHoliday" in request.resource.data));
+      }
+
+      // --- ANNOUNCEMENTS ---
+      match /announcements/{announcementId} {
+        allow read: if isAuthenticated() && (isCurrentCourse(courseId) || canReadHistory());
+        allow create: if (hasAnyRole(['equipo_directivo', 'director']) || isAdmin()) && isCurrentCourse(courseId);
+        allow update, delete: if ((hasAnyRole(['equipo_directivo', 'director']) && resource.data.author == request.auth.uid) || isAdmin()) && isCurrentCourse(courseId);
+      }
+
+      // --- TICKETS TIC ---
+      match /tickets_tic/{ticketId} {
+        allow read: if isAuthenticated() && (isCurrentCourse(courseId) || canReadHistory());
+        allow create: if isAuthenticated() && isCurrentCourse(courseId);
+        allow delete: if isAuthenticated() && isCurrentCourse(courseId) && (
+          isAdmin() ||
+          (resource.data.requestedBy == request.auth.uid &&
+           resource.data.status == 'abierto' &&
+           (!('assignedTo' in resource.data) || resource.data.assignedTo == null || resource.data.assignedTo == "")
+          )
+        );
+        allow update: if isAuthenticated() && isCurrentCourse(courseId) && (
+          isAdmin() ||
+          hasRole('equipo_tic') ||
+          (resource.data.requestedBy == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title', 'description', 'priority']))
+        );
+      }
+
+      // --- TICKETS MAINTENANCE ---
+      match /tickets_maintenance/{ticketId} {
+        allow read: if isAuthenticated() && (isCurrentCourse(courseId) || canReadHistory());
+        allow create: if isAuthenticated() && isCurrentCourse(courseId);
+        allow delete: if isAuthenticated() && isCurrentCourse(courseId) && (
+          isAdmin() ||
+          (resource.data.requestedBy == request.auth.uid &&
+           (resource.data.status == 'abierto' || resource.data.status == 'pendiente_validacion') &&
+           (!('assignedTo' in resource.data) || resource.data.assignedTo == null || resource.data.assignedTo == "")
+          )
+        );
+        allow update: if isAuthenticated() && isCurrentCourse(courseId) && (
+          isAdmin() ||
+          hasRole('equipo_mantenimiento') ||
+          hasRole('equipo_directivo') ||
+          isDirector() ||
+          (resource.data.requestedBy == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title', 'description', 'priority', 'location']))
+        );
+      }
+
+      // --- TICKETS 3D ---
+      match /tickets_3d/{ticketId} {
+        allow read: if isAuthenticated() && (isCurrentCourse(courseId) || canReadHistory());
+        allow create: if isAuthenticated() && isCurrentCourse(courseId);
+        allow delete: if isAuthenticated() && isCurrentCourse(courseId) && (
+          isAdmin() ||
+          (resource.data.requestedBy == request.auth.uid &&
+           resource.data.status == 'abierto' &&
+           (!('assignedTo' in resource.data) || resource.data.assignedTo == null || resource.data.assignedTo == "")
+          )
+        );
+        allow update: if isAuthenticated() && isCurrentCourse(courseId) && (
+          isAdmin() ||
+          hasRole('equipo_3d') ||
+          (resource.data.requestedBy == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title', 'description', 'priority', 'stlUrl', 'notes']))
+        );
+      }
+
+      // --- SUM RESERVATIONS ---
+      match /sum_reservations/{reservationId} {
+        allow read: if isAuthenticated() && (isCurrentCourse(courseId) || canReadHistory());
+        allow create: if isAuthenticated() && isCurrentCourse(courseId) && request.resource.data.userId == request.auth.uid;
+        allow delete: if isAuthenticated() && isCurrentCourse(courseId) && (resource.data.userId == request.auth.uid || isAdmin() || hasRole('equipo_tic'));
+      }
+
+      // --- CART RESERVATIONS ---
+      match /cart_reservations/{reservationId} {
+        allow read: if isAuthenticated() && (isCurrentCourse(courseId) || canReadHistory());
+        allow create: if isAuthenticated() && isCurrentCourse(courseId) && request.resource.data.userId == request.auth.uid;
+        allow delete: if isAuthenticated() && isCurrentCourse(courseId) && (resource.data.userId == request.auth.uid || isAdmin() || hasRole('equipo_tic'));
+      }
+
+      // --- DUAL: COMPANIES ---
+      match /companies/{companyId} {
+        allow read: if isAuthenticated() && (isCurrentCourse(courseId) || canReadDualHistory());
+        allow write: if (isAdmin() || isEquipoDual()) && isCurrentCourse(courseId);
+      }
+
+      // --- DUAL: STUDENTS ---
+      match /dual_students/{studentId} {
+        allow read: if isAuthenticated() && (isAdmin() || isEquipoDual()) && (isCurrentCourse(courseId) || canReadDualHistory());
+        allow write: if (isAdmin() || isEquipoDual()) && isCurrentCourse(courseId);
+      }
+
+      // --- DUAL: INTERACTIONS ---
+      match /dual_interactions/{interactionId} {
+        allow read: if isAuthenticated() && (isAdmin() || isEquipoDual()) && (isCurrentCourse(courseId) || canReadDualHistory());
+        allow write: if isAuthenticated() && (isAdmin() || isEquipoDual()) && isCurrentCourse(courseId);
+      }
+
+      // --- COURSE-LEVEL SETTINGS (counters, dual_config per course) ---
+      match /settings/{settingId} {
+        allow read: if isAuthenticated() && (isCurrentCourse(courseId) || canReadHistory());
+        allow write: if isAuthenticated() && isCurrentCourse(courseId);
+      }
     }
   }
 }

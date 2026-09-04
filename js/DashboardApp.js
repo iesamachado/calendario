@@ -24,6 +24,9 @@ class DashboardApp {
         this.user = null;
         this.userRoles = [];
         this.isAdmin = false;
+        this.activeCourse = null;    // Current active courseId (e.g. '2025-2026')
+        this.currentCourse = null;   // The real current course (for detecting historical mode)
+        this.coursesList = [];       // All courses list
 
         this.init();
     }
@@ -44,12 +47,20 @@ class DashboardApp {
                 // Load config
                 this.moduleConfig = await this.firebaseService.getModuleConfig();
 
+                // Load course info
+                this.currentCourse = await this.firebaseService.getCurrentCourse();
+                this.activeCourse = this.currentCourse;
+                this.coursesList = await this.firebaseService.getCoursesList();
+
                 this.setupUI();
                 this.setupRouter();
                 this.setupEventListeners();
 
                 // Re-trigger visual update after config load
                 this.applyModuleConfig();
+
+                // Setup course selector (for users with historical access)
+                this.setupCourseSelector();
 
                 // Start router after everything is ready
                 this.router.start();
@@ -145,14 +156,6 @@ class DashboardApp {
                 allowed = true;
             } else if (state === 'testers') {
                 allowed = this.userRoles.includes('tester');
-            } else if (state === 'active' && moduleKey === 'dual') {
-                // Dual module specific role check even if active
-                // Or maybe we treat it as 'active' but only show if have role?
-                // Plan said: "Visible ONLY to users with the equipo_dual role".
-                // If config says 'active', maybe we still restrict it hard?
-                // Or we rely on the config being set to specific logic?
-                // Let's implement hard check here for safety + config
-                allowed = this.userRoles.includes('equipo_dual') || this.isAdmin;
             }
 
             if (!allowed) {
@@ -168,46 +171,46 @@ class DashboardApp {
             return factory();
         };
 
-        // Register routes
+        // Register routes — all modules receive activeCourse
         this.router.register('/dashboard', () => {
-            return new DashboardModule(mainContent, this.firebaseService, this.user, this.userRoles, this.isAdmin, this.moduleConfig);
+            return new DashboardModule(mainContent, this.firebaseService, this.user, this.userRoles, this.isAdmin, this.moduleConfig, this.activeCourse);
         });
 
         this.router.register('/calendario', () => {
-            return checkAccess('calendario', () => new CalendarModule(mainContent, this.firebaseService, this.user, this.isAdmin, this.userRoles, this.moduleConfig));
+            return checkAccess('calendario', () => new CalendarModule(mainContent, this.firebaseService, this.user, this.isAdmin, this.userRoles, this.moduleConfig, this.activeCourse));
         });
 
         this.router.register('/anuncios', () => {
-            return checkAccess('anuncios', () => new AnnouncementsModule(mainContent, this.firebaseService, this.user, this.userRoles, this.isAdmin));
+            return checkAccess('anuncios', () => new AnnouncementsModule(mainContent, this.firebaseService, this.user, this.userRoles, this.isAdmin, this.activeCourse));
         });
 
         this.router.register('/tickets-tic', () => {
-            return checkAccess('tickets_tic', () => new TicketsTicModule(mainContent, this.firebaseService, this.user, this.userRoles, this.isAdmin));
+            return checkAccess('tickets_tic', () => new TicketsTicModule(mainContent, this.firebaseService, this.user, this.userRoles, this.isAdmin, this.activeCourse));
         });
 
         this.router.register('/tickets-mantenimiento', () => {
-            return checkAccess('tickets_maintenance', () => new TicketsMaintenanceModule(mainContent, this.firebaseService, this.user, this.userRoles, this.isAdmin));
+            return checkAccess('tickets_maintenance', () => new TicketsMaintenanceModule(mainContent, this.firebaseService, this.user, this.userRoles, this.isAdmin, this.activeCourse));
         });
 
         this.router.register('/tickets-3d', () => {
-            return checkAccess('tickets_3d', () => new Tickets3DModule(mainContent, this.firebaseService, this.user, this.userRoles, this.isAdmin));
+            return checkAccess('tickets_3d', () => new Tickets3DModule(mainContent, this.firebaseService, this.user, this.userRoles, this.isAdmin, this.activeCourse));
         });
 
         this.router.register('/dual', () => {
-            return checkAccess('dual', () => new DualModule(mainContent, this.firebaseService, this.user, this.userRoles));
+            return checkAccess('dual', () => new DualModule(mainContent, this.firebaseService, this.user, this.userRoles, this.activeCourse, this.coursesList, this.currentCourse, this.isAdmin));
         });
 
         this.router.register('/reserva-sum', () => {
-            return checkAccess('sum', () => new SUMModule(mainContent, this.firebaseService, this.user, this.userRoles, this.isAdmin));
+            return checkAccess('sum', () => new SUMModule(mainContent, this.firebaseService, this.user, this.userRoles, this.isAdmin, this.activeCourse));
         });
 
         this.router.register('/reserva-carros', () => {
-            return checkAccess('carts', () => new LaptopCartsModule(mainContent, this.firebaseService, this.user, this.userRoles, this.isAdmin));
+            return checkAccess('carts', () => new LaptopCartsModule(mainContent, this.firebaseService, this.user, this.userRoles, this.isAdmin, this.activeCourse));
         });
 
         if (this.isAdmin) {
             this.router.register('/admin', () => {
-                return new AdminModule(mainContent, this.firebaseService, this.user);
+                return new AdminModule(mainContent, this.firebaseService, this.user, this.coursesList, this.currentCourse);
             });
 
             this.router.register('/departamentos', () => {
@@ -228,6 +231,59 @@ class DashboardApp {
         // Help Route
         this.router.register('/ayuda', () => {
             return new HelpModule(mainContent, this.firebaseService, this.user, this.userRoles, this.moduleConfig);
+        });
+    }
+
+    /**
+     * Sets up the course selector dropdown in the sidebar.
+     * Visible only for: admins, equipo_directivo (all modules), equipo_dual (dual module only).
+     */
+    setupCourseSelector() {
+        const canSeeAllHistory = this.isAdmin || this.userRoles.includes('equipo_directivo');
+        const isDual = this.userRoles.includes('equipo_dual');
+
+        if (!canSeeAllHistory && !isDual) return; // No access to historical data
+
+        const selectorSection = document.getElementById('course-selector-section');
+        const selectorEl = document.getElementById('course-selector');
+
+        if (!selectorSection || !selectorEl) return;
+
+        // Populate options
+        selectorEl.innerHTML = this.coursesList.map(course => `
+            <option value="${course.id}" ${course.id === this.currentCourse ? '' : ''}>
+                ${course.label}${course.isCurrent ? ' (Actual)' : ''}
+            </option>
+        `).join('');
+
+        // Set selected to current active course
+        selectorEl.value = this.activeCourse;
+
+        // Show the selector
+        selectorSection.classList.remove('d-none');
+
+        // Listen for changes
+        selectorEl.addEventListener('change', (e) => {
+            this.activeCourse = e.target.value;
+            const isHistorical = this.activeCourse !== this.currentCourse;
+
+            // Update historical mode banner
+            const banner = document.getElementById('historical-mode-banner');
+            const bannerLabel = document.getElementById('historical-course-label');
+            if (banner) {
+                if (isHistorical) {
+                    const selectedCourse = this.coursesList.find(c => c.id === this.activeCourse);
+                    bannerLabel.textContent = selectedCourse ? selectedCourse.label : this.activeCourse;
+                    banner.classList.remove('d-none');
+                } else {
+                    banner.classList.add('d-none');
+                }
+            }
+
+            // Re-trigger current route to reload module with new courseId
+            const currentHash = window.location.hash || '#/dashboard';
+            // Force re-render by briefly clearing hash then restoring
+            window.dispatchEvent(new HashChangeEvent('hashchange'));
         });
     }
 

@@ -1,7 +1,8 @@
 import { UIHelpers } from '../UIHelpers.js';
 
 export class AnnouncementsModule {
-    constructor(container, firebaseService, user, userRoles, isAdmin) {
+    constructor(container, firebaseService, user, userRoles, isAdmin, courseId) {
+        this.courseId = courseId;
         this.container = container;
         this.firebaseService = firebaseService;
         this.user = user;
@@ -39,7 +40,7 @@ export class AnnouncementsModule {
         UIHelpers.showLoading(container);
 
         try {
-            const announcements = await this.firebaseService.getAnnouncements(this.userRoles);
+            const announcements = await this.firebaseService.getAnnouncements(this.userRoles, this.courseId);
 
             if (announcements.length === 0) {
                 UIHelpers.showEmptyState(container, 'No hay anuncios disponibles', 'bullhorn');
@@ -151,7 +152,7 @@ export class AnnouncementsModule {
                     content,
                     priority,
                     targetRoles
-                }, this.user.uid, this.user.displayName || this.user.email.split('@')[0]);
+                }, this.user.uid, this.user.displayName || this.user.email.split('@', this.courseId)[0]);
 
                 UIHelpers.showToast('Anuncio publicado correctamente', 'success');
                 bsModal.hide();

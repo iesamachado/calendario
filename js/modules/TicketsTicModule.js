@@ -1,7 +1,8 @@
 import { UIHelpers } from '../UIHelpers.js';
 
 export class TicketsTicModule {
-    constructor(container, firebaseService, user, userRoles, isAdmin) {
+    constructor(container, firebaseService, user, userRoles, isAdmin, courseId) {
+        this.courseId = courseId;
         this.container = container;
         this.firebaseService = firebaseService;
         this.user = user;
@@ -187,7 +188,7 @@ export class TicketsTicModule {
                 btnDelete.addEventListener('click', async () => {
                     if (confirm('¿Estás seguro de que deseas eliminar esta petición?')) {
                         try {
-                            await this.firebaseService.deleteTicket('tic', ticketId);
+                            await this.firebaseService.deleteTicket('tic', ticketId, this.courseId);
                             UIHelpers.showToast('Petición eliminada', 'success');
                             bsModal.hide();
                             await this.loadTicketsList();
@@ -257,7 +258,7 @@ export class TicketsTicModule {
                                 updates.newHistoryEntries = newHistoryEntries;
                             }
 
-                            await this.firebaseService.updateTicket('tic', ticketId, updates);
+                            await this.firebaseService.updateTicket('tic', ticketId, updates, this.courseId);
 
                             UIHelpers.showToast('Petición actualizada', 'success');
                             bsModal.hide();
@@ -338,7 +339,7 @@ export class TicketsTicModule {
             const userData = users.find(u => u.uid === this.user.uid);
             const userDept = userData ? userData.department : null;
 
-            const tickets = await this.firebaseService.getTickets('tic', this.user.uid, this.userRoles, userDept);
+            const tickets = await this.firebaseService.getTickets('tic', this.user.uid, this.userRoles, userDept, this.courseId);
             this.tickets = tickets;
 
             if (tickets.length === 0) {
@@ -505,7 +506,7 @@ export class TicketsTicModule {
                     description,
                     priority,
                     department: userDepartment
-                }, this.user.uid, this.user.displayName || this.user.email.split('@')[0], userDepartment);
+                }, this.user.uid, this.user.displayName || this.user.email.split('@')[0], userDepartment, this.courseId);
 
                 UIHelpers.showToast(`Incidencia ${result.ticketNumber} creada correctamente`, 'success');
                 bsModal.hide();
@@ -528,7 +529,7 @@ export class TicketsTicModule {
             // Manager role is 'equipo_tic'. They see all.
             // Fetch tickets and departments
             const [allTickets, departments] = await Promise.all([
-                this.firebaseService.getTickets('tic', this.user.uid, this.userRoles),
+                this.firebaseService.getTickets('tic', this.user.uid, this.userRoles, null, this.courseId),
                 this.firebaseService.getAllDepartments()
             ]);
 

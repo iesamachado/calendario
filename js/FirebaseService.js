@@ -1,6 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, addDoc, collection, query, where, onSnapshot, getDocs, arrayUnion, arrayRemove, orderBy, limit, startAfter } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, addDoc, collection, query, where, onSnapshot, getDocs, arrayUnion, arrayRemove, orderBy, limit, startAfter, writeBatch } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js";
 import firebaseConfig from './firebase-config.js';
 
@@ -16,6 +16,92 @@ export class FirebaseService {
         this.provider.addScope('https://www.googleapis.com/auth/classroom.rosters.readonly');
         this.provider.addScope('https://www.googleapis.com/auth/classroom.profile.emails');
     }
+
+    // ==================== COURSE MANAGEMENT ====================
+
+    /**
+     * Returns a Firestore collection reference scoped to a course.
+     * e.g. courseCol('tickets_tic', '2025-2026') → /courses/2025-2026/tickets_tic
+     */
+    courseCol(collectionName, courseId) {
+        return collection(this.db, 'courses', courseId, collectionName);
+    }
+
+    /**
+     * Returns a Firestore doc reference scoped to a course.
+     */
+    courseDoc(collectionName, docId, courseId) {
+        return doc(this.db, 'courses', courseId, collectionName, docId);
+    }
+
+    /**
+     * Reads the current active course from settings/current_course.
+     * Returns the courseId string (e.g. '2025-2026').
+     */
+    async getCurrentCourse() {
+        const snap = await getDoc(doc(this.db, 'settings', 'current_course'));
+        if (snap.exists()) {
+            return snap.data().courseId;
+        }
+        // Fallback: if no current_course doc exists yet, return a default
+        return '2025-2026';
+    }
+
+    /**
+     * Returns the full list of all school year courses (current + archived).
+     */
+    async getCoursesList() {
+        const snap = await getDoc(doc(this.db, 'settings', 'courses_list'));
+        if (snap.exists()) {
+            return snap.data().courses || [];
+        }
+        return [];
+    }
+
+    /**
+     * Archives the current course and creates a new one.
+     * Only admins should call this.
+     * @param {string} newCourseId - e.g. '2026-2027'
+     * @param {string} newCourseLabel - e.g. 'Curso 2026-2027'
+     */
+    async archiveCourse(newCourseId, newCourseLabel) {
+        // Get existing courses list
+        const coursesSnap = await getDoc(doc(this.db, 'settings', 'courses_list'));
+        const existingCourses = coursesSnap.exists() ? (coursesSnap.data().courses || []) : [];
+
+        // Mark all existing courses as not current
+        const updatedCourses = existingCourses.map(c => ({
+            ...c,
+            isCurrent: false,
+            archivedAt: c.isCurrent ? new Date().toISOString() : c.archivedAt
+        }));
+
+        // Add the new course
+        updatedCourses.push({
+            id: newCourseId,
+            label: newCourseLabel,
+            isCurrent: true,
+            createdAt: new Date().toISOString(),
+            archivedAt: null
+        });
+
+        const batch = writeBatch(this.db);
+
+        // Update courses_list
+        batch.set(doc(this.db, 'settings', 'courses_list'), { courses: updatedCourses });
+
+        // Update current_course
+        batch.set(doc(this.db, 'settings', 'current_course'), {
+            courseId: newCourseId,
+            label: newCourseLabel,
+            createdAt: new Date(),
+            archivedAt: null
+        });
+
+        await batch.commit();
+    }
+
+
 
     // Methods
     login(onSuccess, onError) {
@@ -91,8 +177,8 @@ export class FirebaseService {
         return signOut(this.auth);
     }
 
-    async addCalendarEvent(dateStr, eventData) {
-        const docRef = doc(this.db, 'availability', dateStr);
+    async addCalendarEvent(dateStr, eventData, courseId) {
+        const docRef = this.courseDoc('availability', dateStr, courseId);
         const snap = await getDoc(docRef);
 
         if (snap.exists()) {
@@ -113,8 +199,8 @@ export class FirebaseService {
         }
     }
 
-    async removeCalendarEvent(dateStr, eventData) {
-        const docRef = doc(this.db, 'availability', dateStr);
+    async removeCalendarEvent(dateStr, eventData, courseId) {
+        const docRef = this.courseDoc('availability', dateStr, courseId);
         await updateDoc(docRef, {
             events: arrayRemove(eventData)
         });
@@ -142,6 +228,7 @@ export class FirebaseService {
 
         if (docSnap.exists()) {
             return docSnap.data().isAdmin || false;
+
         } else {
             return false;
         }
@@ -150,9 +237,9 @@ export class FirebaseService {
     /* 
      * Fetches availability for a specific month once (no subscription).
      */
-    async getMonthAvailability(year, month) {
+    async getMonthAvailability(year, month, courseId) {
         const monthStr = `${year}-${String(month + 1).padStart(2, '0')}`;
-        const q = query(collection(this.db, "availability"), where("monthId", "==", monthStr));
+        const q = query(this.courseCol('availability', courseId), where("monthId", "==", monthStr));
         const snap = await getDocs(q);
         const data = {};
         snap.forEach(doc => { data[doc.id] = doc.data(); });
@@ -163,7 +250,7 @@ export class FirebaseService {
      * Subscribes to availability changes for a specific month.
      * callback(data) will be called with an object mapping "YYYY-MM-DD" -> { slots, isHoliday, ... }
      */
-    subscribeToMonth(year, month, callback) {
+    subscribeToMonth(year, month, callback, courseId) {
         const monthStr = `${year}-${String(month + 1).padStart(2, '0')}`;
         // Ranges
         const startOfMonth = new Date(year, month, 1);
@@ -241,7 +328,7 @@ export class FirebaseService {
             });
 
         // 1. Availability
-        const qAvail = query(collection(this.db, "availability"), where("monthId", "==", monthStr));
+        const qAvail = query(this.courseCol('availability', courseId), where("monthId", "==", monthStr));
         const unsubAvail = onSnapshot(qAvail, (snap) => {
             availData = {};
             snap.forEach(doc => { availData[doc.id] = doc.data(); });
@@ -250,7 +337,7 @@ export class FirebaseService {
         });
 
         // 2. SUM
-        const qSum = query(collection(this.db, "sum_reservations"), where("date", ">=", startStr), where("date", "<=", endStr));
+        const qSum = query(this.courseCol('sum_reservations', courseId), where("date", ">=", startStr), where("date", "<=", endStr));
         const unsubSum = onSnapshot(qSum, (snap) => {
             sumCounts = {};
             snap.forEach(doc => {
@@ -263,7 +350,7 @@ export class FirebaseService {
         });
 
         // 3. Carts
-        const qCarts = query(collection(this.db, "cart_reservations"), where("date", ">=", startStr), where("date", "<=", endStr));
+        const qCarts = query(this.courseCol('cart_reservations', courseId), where("date", ">=", startStr), where("date", "<=", endStr));
         const unsubCarts = onSnapshot(qCarts, (snap) => {
             cartCounts = {};
             snap.forEach(doc => {
@@ -284,10 +371,10 @@ export class FirebaseService {
     /*
      * Updates the slot count for a specific day.
      */
-    async updateSlot(dateStr, newSlots) {
+    async updateSlot(dateStr, newSlots, courseId) {
         if (newSlots < 0 || newSlots > 4) return;
 
-        const docRef = doc(this.db, "availability", dateStr);
+        const docRef = this.courseDoc('availability', dateStr, courseId);
         const monthId = dateStr.substring(0, 7);
 
         await setDoc(docRef, {
@@ -300,8 +387,8 @@ export class FirebaseService {
     /*
      * Sets the Google Drive Document ID for a specific day.
      */
-    async setDriveLink(dateStr, driveId) {
-        const docRef = doc(this.db, "availability", dateStr);
+    async setDriveLink(dateStr, driveId, courseId) {
+        const docRef = this.courseDoc('availability', dateStr, courseId);
         const monthId = dateStr.substring(0, 7);
         const snap = await getDoc(docRef);
 
@@ -321,10 +408,10 @@ export class FirebaseService {
     /*
      * Toggles the holiday status for a specific day.
      */
-    async toggleHoliday(dateStr) {
+    async toggleHoliday(dateStr, courseId) {
         console.log(`Toggling holiday for ${dateStr}...`);
         try {
-            const docRef = doc(this.db, "availability", dateStr);
+            const docRef = this.courseDoc('availability', dateStr, courseId);
             const snap = await getDoc(docRef);
             let isHoliday = true; // Default to true if not exists (making it holiday)
 
@@ -400,9 +487,9 @@ export class FirebaseService {
 
     // ==================== DUAL INTERACTIONS ====================
 
-    async getInteractionsByAuthor(authorUid) {
+    async getInteractionsByAuthor(authorUid, courseId) {
         const q = query(
-            collection(this.db, "dual_interactions"),
+            this.courseCol('dual_interactions', courseId),
             where("author", "==", authorUid),
             orderBy("date", "desc")
         );
@@ -492,8 +579,8 @@ export class FirebaseService {
 
     // ==================== ANNOUNCEMENTS ====================
 
-    async createAnnouncement(data, authorUid, authorName) {
-        const announcementRef = doc(collection(this.db, "announcements"));
+    async createAnnouncement(data, authorUid, authorName, courseId) {
+        const announcementRef = doc(this.courseCol('announcements', courseId));
         await setDoc(announcementRef, {
             ...data,
             author: authorUid,
@@ -503,8 +590,8 @@ export class FirebaseService {
         return announcementRef.id;
     }
 
-    async getAnnouncements(userRoles) {
-        const q = query(collection(this.db, "announcements"));
+    async getAnnouncements(userRoles, courseId) {
+        const q = query(this.courseCol('announcements', courseId));
         const querySnapshot = await getDocs(q);
         const announcements = [];
         querySnapshot.forEach((doc) => {
@@ -519,20 +606,20 @@ export class FirebaseService {
         return announcements.sort((a, b) => b.createdAt?.toMillis() - a.createdAt?.toMillis());
     }
 
-    async updateAnnouncement(id, data) {
-        const announcementRef = doc(this.db, "announcements", id);
+    async updateAnnouncement(id, data, courseId) {
+        const announcementRef = this.courseDoc('announcements', id, courseId);
         await updateDoc(announcementRef, data);
     }
 
-    async deleteAnnouncement(id) {
-        const announcementRef = doc(this.db, "announcements", id);
+    async deleteAnnouncement(id, courseId) {
+        const announcementRef = this.courseDoc('announcements', id, courseId);
         await setDoc(announcementRef, { deleted: true }, { merge: true });
     }
 
     // ==================== TICKET MANAGEMENT ====================
 
-    async getNextTicketNumber(type) {
-        const settingsRef = doc(this.db, "settings", "counters");
+    async getNextTicketNumber(type, courseId) {
+        const settingsRef = doc(this.db, 'courses', courseId, 'settings', 'counters');
         const snap = await getDoc(settingsRef);
 
         let counter = 1;
@@ -551,14 +638,14 @@ export class FirebaseService {
         return `${prefix}-${String(counter).padStart(3, '0')}`;
     }
 
-    async createTicket(type, data, userUid, userName, userDepartment) {
-        const ticketNumber = await this.getNextTicketNumber(type);
+    async createTicket(type, data, userUid, userName, userDepartment, courseId) {
+        const ticketNumber = await this.getNextTicketNumber(type, courseId);
         let collection_name;
         if (type === 'tic') collection_name = 'tickets_tic';
         else if (type === 'maintenance') collection_name = 'tickets_maintenance';
         else if (type === '3d') collection_name = 'tickets_3d';
 
-        const ticketRef = doc(collection(this.db, collection_name));
+        const ticketRef = doc(this.courseCol(collection_name, courseId));
         const ticketData = {
             ticketNumber: ticketNumber,
             ...data,
@@ -595,7 +682,7 @@ export class FirebaseService {
         return { id: ticketRef.id, ticketNumber };
     }
 
-    async getTickets(type, userUid, userRoles, userDepartment) {
+    async getTickets(type, userUid, userRoles, userDepartment, courseId) {
         let collection_name;
         if (type === 'tic') collection_name = 'tickets_tic';
         else if (type === 'maintenance') collection_name = 'tickets_maintenance';
@@ -618,7 +705,7 @@ export class FirebaseService {
 
         if (canViewAll) {
             // Fetch All
-            const q = query(collection(this.db, collection_name));
+            const q = query(this.courseCol(collection_name, courseId));
             querySnapshots.push(await getDocs(q));
         }
 
@@ -633,9 +720,9 @@ export class FirebaseService {
         return Array.from(ticketsMap.values()).sort((a, b) => b.createdAt?.toMillis() - a.createdAt?.toMillis());
     }
 
-    async updateTicket(type, id, data) {
+    async updateTicket(type, id, data, courseId) {
         const collection_name = type === 'tic' ? 'tickets_tic' : (type === 'maintenance' ? 'tickets_maintenance' : 'tickets_3d');
-        const ticketRef = doc(this.db, collection_name, id);
+        const ticketRef = this.courseDoc(collection_name, id, courseId);
 
         // If status is changing to 'resuelto', calculate resolution time
         if (data.status === 'resuelto' || data.status === 'cerrado') {
@@ -674,7 +761,7 @@ export class FirebaseService {
         await updateDoc(ticketRef, data);
     }
 
-    async deleteTicket(type, ticketId) {
+    async deleteTicket(type, ticketId, courseId) {
         let collection_name;
         if (type === 'tic') collection_name = 'tickets_tic';
         else if (type === 'maintenance') collection_name = 'tickets_maintenance';
@@ -682,7 +769,7 @@ export class FirebaseService {
         else throw new Error('Tipo de ticket inválido');
 
         try {
-            await deleteDoc(doc(this.db, collection_name, ticketId));
+            await deleteDoc(this.courseDoc(collection_name, ticketId, courseId));
             return { success: true };
         } catch (error) {
             console.error("Error deleting ticket: ", error);
@@ -690,9 +777,9 @@ export class FirebaseService {
         }
     }
 
-    async getTicketStats(type, filters = {}) {
+    async getTicketStats(type, filters = {}, courseId) {
         const collection_name = type === 'tic' ? 'tickets_tic' : 'tickets_maintenance';
-        const q = query(collection(this.db, collection_name));
+        const q = query(this.courseCol(collection_name, courseId));
         const querySnapshot = await getDocs(q);
 
         const tickets = [];
@@ -790,13 +877,13 @@ export class FirebaseService {
 
     // --- SUM Reservations ---
 
-    async getSUMReservations(dateStr) {
-        const q = query(collection(this.db, 'sum_reservations'), where('date', '==', dateStr));
+    async getSUMReservations(dateStr, courseId) {
+        const q = query(this.courseCol('sum_reservations', courseId), where('date', '==', dateStr));
         const snapshot = await getDocs(q);
         return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     }
 
-    async reserveSUM(dateStr, slotIndex, slotLabel, title, userUid, userName) {
+    async reserveSUM(dateStr, slotIndex, slotLabel, title, userUid, userName, courseId) {
         const reservationData = {
             date: dateStr,
             slotIndex: slotIndex,
@@ -806,11 +893,11 @@ export class FirebaseService {
             userName: userName,
             createdAt: new Date()
         };
-        await addDoc(collection(this.db, 'sum_reservations'), reservationData);
+        await addDoc(this.courseCol('sum_reservations', courseId), reservationData);
     }
 
-    async cancelSUMReservation(reservationId) {
-        await deleteDoc(doc(this.db, 'sum_reservations', reservationId));
+    async cancelSUMReservation(reservationId, courseId) {
+        await deleteDoc(this.courseDoc('sum_reservations', reservationId, courseId));
     }
 
     // --- Drive Sync ---
@@ -833,8 +920,8 @@ export class FirebaseService {
 
     // --- Companies ---
 
-    async getCompanies() {
-        const q = query(collection(this.db, "companies"));
+    async getCompanies(courseId) {
+        const q = query(this.courseCol('companies', courseId));
         const snapshot = await getDocs(q);
         const companies = [];
         snapshot.forEach(doc => {
@@ -843,29 +930,29 @@ export class FirebaseService {
         return companies.sort((a, b) => a.name.localeCompare(b.name));
     }
 
-    async createCompany(data) {
-        const docRef = await addDoc(collection(this.db, "companies"), {
+    async createCompany(data, courseId) {
+        const docRef = await addDoc(this.courseCol('companies', courseId), {
             ...data,
             createdAt: new Date()
         });
         return docRef.id;
     }
 
-    async updateCompany(id, data) {
-        const docRef = doc(this.db, "companies", id);
+    async updateCompany(id, data, courseId) {
+        const docRef = this.courseDoc('companies', id, courseId);
         await updateDoc(docRef, data);
     }
 
-    async deleteCompany(id) {
-        const docRef = doc(this.db, "companies", id);
+    async deleteCompany(id, courseId) {
+        const docRef = this.courseDoc('companies', id, courseId);
         await deleteDoc(docRef);
     }
 
     // --- Dual Interactions (CMS) ---
 
-    async getDualInteractions(relatedId) {
+    async getDualInteractions(relatedId, courseId) {
         const q = query(
-            collection(this.db, "dual_interactions"),
+            this.courseCol('dual_interactions', courseId),
             where("relatedId", "==", relatedId)
         );
         const snapshot = await getDocs(q);
@@ -877,25 +964,25 @@ export class FirebaseService {
         return interactions.sort((a, b) => new Date(b.date) - new Date(a.date));
     }
 
-    async addDualInteraction(data) {
-        const docRef = await addDoc(collection(this.db, "dual_interactions"), {
+    async addDualInteraction(data, courseId) {
+        const docRef = await addDoc(this.courseCol('dual_interactions', courseId), {
             ...data,
             createdAt: new Date()
         });
         return docRef.id;
     }
 
-    async deleteDualInteraction(id) {
-        await deleteDoc(doc(this.db, "dual_interactions", id));
+    async deleteDualInteraction(id, courseId) {
+        await deleteDoc(this.courseDoc('dual_interactions', id, courseId));
     }
 
     // --- Dual Students ---
 
-    async getDualStudents(course) {
-        let q = query(collection(this.db, "dual_students"));
+    async getDualStudents(course, courseId) {
+        let q = query(this.courseCol('dual_students', courseId));
 
         if (course) {
-            q = query(collection(this.db, "dual_students"), where("course", "==", course));
+            q = query(this.courseCol('dual_students', courseId), where("course", "==", course));
         }
 
         const snapshot = await getDocs(q);
@@ -906,27 +993,28 @@ export class FirebaseService {
         return students.sort((a, b) => a.name.localeCompare(b.name));
     }
 
-    async createDualStudent(data) {
-        const docRef = await addDoc(collection(this.db, "dual_students"), {
+    async createDualStudent(data, courseId) {
+        const docRef = await addDoc(this.courseCol('dual_students', courseId), {
             ...data,
             createdAt: new Date()
         });
         return docRef.id;
     }
 
-    async updateDualStudent(id, data) {
-        const docRef = doc(this.db, "dual_students", id);
+    async updateDualStudent(id, data, courseId) {
+        const docRef = this.courseDoc('dual_students', id, courseId);
         await updateDoc(docRef, data);
     }
 
-    async deleteDualStudent(id) {
-        const docRef = doc(this.db, "dual_students", id);
+    async deleteDualStudent(id, courseId) {
+        const docRef = this.courseDoc('dual_students', id, courseId);
+        await deleteDoc(docRef);
     }
 
     // --- Dual Config (Cycles/Levels) ---
 
-    async getDualConfig() {
-        const docRef = doc(this.db, "settings", "dual_config");
+    async getDualConfig(courseId) {
+        const docRef = doc(this.db, 'courses', courseId, 'settings', 'dual_config');
         const snap = await getDoc(docRef);
         if (snap.exists()) {
             return snap.data();
@@ -934,8 +1022,8 @@ export class FirebaseService {
         return { cycles: [], levels: [] };
     }
 
-    async updateDualConfig(data) {
-        const docRef = doc(this.db, "settings", "dual_config");
+    async updateDualConfig(data, courseId) {
+        const docRef = doc(this.db, 'courses', courseId, 'settings', 'dual_config');
         await setDoc(docRef, data, { merge: true });
     }
 
@@ -1029,15 +1117,15 @@ export class FirebaseService {
         await deleteDoc(doc(this.db, 'carts', id));
     }
 
-    async getCartReservations(dateStr) {
-        const q = query(collection(this.db, 'cart_reservations'), where('date', '==', dateStr));
+    async getCartReservations(dateStr, courseId) {
+        const q = query(this.courseCol('cart_reservations', courseId), where('date', '==', dateStr));
         const snapshot = await getDocs(q);
         return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     }
 
-    async getCartReservationsInRange(startDate, endDate) {
+    async getCartReservationsInRange(startDate, endDate, courseId) {
         const q = query(
-            collection(this.db, 'cart_reservations'),
+            this.courseCol('cart_reservations', courseId),
             where('date', '>=', startDate),
             where('date', '<=', endDate)
         );
@@ -1045,7 +1133,7 @@ export class FirebaseService {
         return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     }
 
-    async reserveCart(dateStr, slotIndex, slotLabel, cartId, userUid, userName, comment = '') {
+    async reserveCart(dateStr, slotIndex, slotLabel, cartId, userUid, userName, comment = '', courseId) {
         const reservationData = {
             date: dateStr,
             slotIndex: slotIndex,
@@ -1056,16 +1144,16 @@ export class FirebaseService {
             comment: comment || '',
             createdAt: new Date()
         };
-        await addDoc(collection(this.db, 'cart_reservations'), reservationData);
+        await addDoc(this.courseCol('cart_reservations', courseId), reservationData);
     }
 
-    async cancelCartReservation(reservationId) {
-        await deleteDoc(doc(this.db, 'cart_reservations', reservationId));
+    async cancelCartReservation(reservationId, courseId) {
+        await deleteDoc(this.courseDoc('cart_reservations', reservationId, courseId));
     }
 
-    async getReservationsForCartInRange(cartId, slotIndex, startDateStr, userId) {
+    async getReservationsForCartInRange(cartId, slotIndex, startDateStr, userId, courseId) {
         const q = query(
-            collection(this.db, 'cart_reservations'),
+            this.courseCol('cart_reservations', courseId),
             where('cartId', '==', cartId),
             where('slotIndex', '==', slotIndex),
             where('userId', '==', userId),

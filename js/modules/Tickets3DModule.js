@@ -1,7 +1,8 @@
 import { UIHelpers } from '../UIHelpers.js';
 
 export class Tickets3DModule {
-    constructor(container, firebaseService, user, userRoles, isAdmin) {
+    constructor(container, firebaseService, user, userRoles, isAdmin, courseId) {
+        this.courseId = courseId;
         this.container = container;
         this.firebaseService = firebaseService;
         this.user = user;
@@ -75,7 +76,7 @@ export class Tickets3DModule {
             const userData = users.find(u => u.uid === this.user.uid);
             const userDept = userData ? userData.department : null;
 
-            const tickets = await this.firebaseService.getTickets('3d', this.user.uid, this.userRoles, userDept);
+            const tickets = await this.firebaseService.getTickets('3d', this.user.uid, this.userRoles, userDept, this.courseId);
 
             if (tickets.length === 0) {
                 UIHelpers.showEmptyState(container, 'No hay peticiones registradas', 'cube');
@@ -258,7 +259,7 @@ export class Tickets3DModule {
                     description,
                     priority,
                     stlUrl
-                }, this.user.uid, this.user.displayName || this.user.email.split('@')[0], userDepartment);
+                }, this.user.uid, this.user.displayName || this.user.email.split('@')[0], userDepartment, this.courseId);
 
                 UIHelpers.showToast(`Petición ${result.ticketNumber} creada correctamente`, 'success');
                 bsModal.hide();
@@ -274,7 +275,7 @@ export class Tickets3DModule {
 
     async openManageModal(ticketId) {
         // Implementation for managing 3d ticket (add filament, time, photo, update status)
-        const tickets = await this.firebaseService.getTickets('3d', this.user.uid, this.userRoles);
+        const tickets = await this.firebaseService.getTickets('3d', this.user.uid, this.userRoles, null, this.courseId);
         const ticket = tickets.find(t => t.id === ticketId);
 
         if (!ticket) return;
@@ -416,7 +417,7 @@ export class Tickets3DModule {
             btnDelete.addEventListener('click', async () => {
                 if (confirm('¿Estás seguro de que deseas eliminar esta petición?')) {
                     try {
-                        await this.firebaseService.deleteTicket('3d', ticketId);
+                        await this.firebaseService.deleteTicket('3d', ticketId, this.courseId);
                         UIHelpers.showToast('Petición eliminada', 'success');
                         bsModal.hide();
                         await this.loadTicketsList();
@@ -495,7 +496,7 @@ export class Tickets3DModule {
                 // Only send update if meaningful change or forced? 
                 // For simplified UX, always update if button clicked.
 
-                await this.firebaseService.updateTicket('3d', ticketId, updates);
+                await this.firebaseService.updateTicket('3d', ticketId, updates, this.courseId);
 
                 UIHelpers.showToast('Petición actualizada', 'success');
                 bsModal.hide();
@@ -520,7 +521,7 @@ export class Tickets3DModule {
         try {
             // Get all tickets and departments
             const [allTickets, departments] = await Promise.all([
-                this.firebaseService.getTickets('3d', this.user.uid, this.userRoles),
+                this.firebaseService.getTickets('3d', this.user.uid, this.userRoles, null, this.courseId),
                 this.firebaseService.getAllDepartments()
             ]);
 

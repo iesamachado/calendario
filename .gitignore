@@ -1,0 +1,8 @@
+
+# ==================================
+# IGNORAR ARCHIVOS SENSIBLES Y BACKUPS
+# ==================================
+serviceAccountKey.json
+backup_*/
+node_modules/
+package-lock.json

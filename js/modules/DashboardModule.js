@@ -1,7 +1,8 @@
 import { UIHelpers } from '../UIHelpers.js';
 
 export class DashboardModule {
-    constructor(container, firebaseService, user, userRoles, isAdmin, moduleConfig) {
+    constructor(container, firebaseService, user, userRoles, isAdmin, moduleConfig, courseId) {
+        this.courseId = courseId;
         this.container = container;
         this.firebaseService = firebaseService;
         this.user = user;
@@ -101,15 +102,15 @@ export class DashboardModule {
             const pKeys = [];
 
             if (visibleModules.some(m => m.key === 'tickets_tic')) {
-                promises.push(this.firebaseService.getTickets('tic', this.user.uid, this.userRoles));
+                promises.push(this.firebaseService.getTickets('tic', this.user.uid, this.userRoles, null, this.courseId));
                 pKeys.push('tic');
             }
             if (visibleModules.some(m => m.key === 'tickets_maintenance')) {
-                promises.push(this.firebaseService.getTickets('maintenance', this.user.uid, this.userRoles));
+                promises.push(this.firebaseService.getTickets('maintenance', this.user.uid, this.userRoles, null, this.courseId));
                 pKeys.push('mnt');
             }
             if (visibleModules.some(m => m.key === 'anuncios')) {
-                promises.push(this.firebaseService.getAnnouncements(this.userRoles));
+                promises.push(this.firebaseService.getAnnouncements(this.userRoles, this.courseId));
                 pKeys.push('ann');
             }
 
@@ -209,7 +210,7 @@ export class DashboardModule {
         if (!container) return; // Should exist if wrapper called
 
         try {
-            const announcements = await this.firebaseService.getAnnouncements(this.userRoles);
+            const announcements = await this.firebaseService.getAnnouncements(this.userRoles, this.courseId);
             const recent = announcements.slice(0, 3);
 
             if (recent.length === 0) {
@@ -251,12 +252,12 @@ export class DashboardModule {
             let myOpenTickets = [];
 
             if (this.isModuleVisible('tickets_tic')) {
-                const ticketsTic = await this.firebaseService.getTickets('tic', this.user.uid, this.userRoles);
+                const ticketsTic = await this.firebaseService.getTickets('tic', this.user.uid, this.userRoles, null, this.courseId);
                 myOpenTickets.push(...ticketsTic.filter(t => t.requestedBy === this.user.uid && (t.status === 'abierto' || t.status === 'en_progreso')));
             }
 
             if (this.isModuleVisible('tickets_maintenance')) {
-                const ticketsMnt = await this.firebaseService.getTickets('maintenance', this.user.uid, this.userRoles);
+                const ticketsMnt = await this.firebaseService.getTickets('maintenance', this.user.uid, this.userRoles, null, this.courseId);
                 myOpenTickets.push(...ticketsMnt.filter(t => t.requestedBy === this.user.uid && (t.status === 'abierto' || t.status === 'en_progreso')));
             }
 

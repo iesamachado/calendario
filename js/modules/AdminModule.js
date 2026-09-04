@@ -1,10 +1,12 @@
 import { UIHelpers } from '../UIHelpers.js';
 
 export class AdminModule {
-    constructor(container, firebaseService, user) {
+    constructor(container, firebaseService, user, coursesList = [], currentCourse = null) {
         this.container = container;
         this.firebaseService = firebaseService;
         this.user = user;
+        this.coursesList = coursesList;
+        this.currentCourse = currentCourse;
 
         this.auditPagination = {
             pageSize: 20,
@@ -25,6 +27,7 @@ export class AdminModule {
         // Attach global functions
         window.editUser = this.openEditUserModal.bind(this);
     }
+
 
     // ... (keep openEditUserModal as is, skipping lines 21-137)
     // Wait, I can't skip lines in replace_file_content. 
@@ -164,13 +167,18 @@ export class AdminModule {
         this.container.innerHTML = `
             <div class="module-header">
                 <h2><i class="fas fa-users-cog me-2"></i>Administración</h2>
-                <p class="text-muted">Gestión de usuarios y auditoría de accesos</p>
+                <p class="text-muted">Gestión de usuarios, cursos y auditoría de accesos</p>
             </div>
 
             <ul class="nav nav-tabs mb-4" id="adminTabs" role="tablist">
                 <li class="nav-item" role="presentation">
                     <button class="nav-link active" id="users-tab" data-bs-toggle="tab" data-bs-target="#users-content" type="button" role="tab" aria-controls="users-content" aria-selected="true">
                         <i class="fas fa-users me-2"></i>Usuarios
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="courses-tab" data-bs-toggle="tab" data-bs-target="#courses-content" type="button" role="tab" aria-controls="courses-content" aria-selected="false">
+                        <i class="fas fa-graduation-cap me-2"></i>Cursos Escolares
                     </button>
                 </li>
                 <li class="nav-item" role="presentation">
@@ -194,6 +202,17 @@ export class AdminModule {
                                 <div class="text-center py-4">
                                     <div class="spinner-border text-primary" role="status"></div>
                                 </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Courses Tab -->
+                <div class="tab-pane fade" id="courses-content" role="tabpanel" aria-labelledby="courses-tab">
+                    <div class="card shadow-sm">
+                        <div class="card-body">
+                            <div id="courses-tab-container">
+                                <div class="spinner-border text-primary" role="status"></div>
                             </div>
                         </div>
                     </div>
@@ -235,10 +254,144 @@ export class AdminModule {
         this.fetchUsers();
         this.loadAuditLogs();
         this.loadModuleConfig();
+        this.loadCoursesTab();
 
         const refreshBtn = document.getElementById('btn-refresh-audit');
         if (refreshBtn) refreshBtn.addEventListener('click', () => this.loadAuditLogs());
     }
+
+    async loadCoursesTab() {
+        const container = document.getElementById('courses-tab-container');
+        if (!container) return;
+
+        const currentCourseObj = this.coursesList.find(c => c.isCurrent);
+
+        container.innerHTML = `
+            <div class="row g-4">
+                <!-- Current course info -->
+                <div class="col-12">
+                    <div class="alert alert-info d-flex align-items-center">
+                        <i class="fas fa-info-circle me-3 fa-lg"></i>
+                        <div>
+                            <strong>Curso activo:</strong> ${currentCourseObj ? currentCourseObj.label : this.currentCourse || 'Sin configurar'}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Archived courses list -->
+                <div class="col-md-6">
+                    <h5 class="fw-bold mb-3"><i class="fas fa-archive me-2"></i>Historial de Cursos</h5>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-striped">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Curso</th>
+                                    <th>Estado</th>
+                                    <th>Fecha archivo</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${this.coursesList.map(course => `
+                                    <tr>
+                                        <td class="fw-bold">${course.label}</td>
+                                        <td>
+                                            ${course.isCurrent
+                                                ? '<span class="badge bg-success">Activo</span>'
+                                                : '<span class="badge bg-secondary">Archivado</span>'
+                                            }
+                                        </td>
+                                        <td class="text-muted small">
+                                            ${course.archivedAt
+                                                ? new Date(course.archivedAt).toLocaleDateString('es-ES')
+                                                : '—'
+                                            }
+                                        </td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- New course form -->
+                <div class="col-md-6">
+                    <div class="card border-warning">
+                        <div class="card-header bg-warning bg-opacity-10">
+                            <h5 class="fw-bold mb-0"><i class="fas fa-plus-circle me-2"></i>Iniciar Nuevo Curso</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="alert alert-warning small">
+                                <i class="fas fa-exclamation-triangle me-2"></i>
+                                <strong>Atención:</strong> Al iniciar un nuevo curso, todos los módulos (incidencias, reservas, calendario...) empezarán desde cero. Los datos del curso actual quedarán archivados y accesibles en modo consulta.
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label fw-bold">ID del nuevo curso <small class="text-muted">(ej: 2026-2027)</small></label>
+                                <input type="text" class="form-control" id="new-course-id" placeholder="2026-2027" pattern="\\d{4}-\\d{4}">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label fw-bold">Nombre del curso</label>
+                                <input type="text" class="form-control" id="new-course-label" placeholder="Curso 2026-2027">
+                            </div>
+                            <button class="btn btn-warning w-100" id="btn-archive-course">
+                                <i class="fas fa-archive me-2"></i>Archivar curso actual e iniciar nuevo
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        // Auto-fill label when ID changes
+        const idInput = document.getElementById('new-course-id');
+        const labelInput = document.getElementById('new-course-label');
+        idInput?.addEventListener('input', () => {
+            if (idInput.value && idInput.value.match(/^\d{4}-\d{4}$/)) {
+                labelInput.value = `Curso ${idInput.value}`;
+            }
+        });
+
+        // Archive button
+        document.getElementById('btn-archive-course')?.addEventListener('click', async () => {
+            const newId = idInput?.value?.trim();
+            const newLabel = labelInput?.value?.trim();
+
+            if (!newId || !newId.match(/^\d{4}-\d{4}$/)) {
+                UIHelpers.showToast('El ID del curso debe tener el formato AAAA-AAAA (ej: 2026-2027)', 'error');
+                return;
+            }
+            if (!newLabel) {
+                UIHelpers.showToast('Introduce un nombre para el nuevo curso', 'error');
+                return;
+            }
+            if (this.coursesList.find(c => c.id === newId)) {
+                UIHelpers.showToast(`El curso ${newId} ya existe`, 'error');
+                return;
+            }
+
+            // Confirmation modal
+            const confirmed = confirm(
+                `⚠️ ATENCIÓN\n\nVas a archivar el curso actual (${currentCourseObj?.label || this.currentCourse}) e iniciar el nuevo curso "${newLabel}".\n\nTodos los módulos empezarán vacíos. Los datos actuales quedarán archivados.\n\n¿Confirmas esta acción?`
+            );
+            if (!confirmed) return;
+
+            const btn = document.getElementById('btn-archive-course');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Procesando...';
+
+            try {
+                await this.firebaseService.archiveCourse(newId, newLabel);
+                UIHelpers.showToast(`Nuevo curso ${newLabel} iniciado correctamente. Recargando...`, 'success');
+                setTimeout(() => window.location.reload(), 2000);
+            } catch (e) {
+                console.error('Error archiving course:', e);
+                UIHelpers.showToast('Error al archivar el curso: ' + e.message, 'error');
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-archive me-2"></i>Archivar curso actual e iniciar nuevo';
+            }
+        });
+    }
+
+
 
     async loadModuleConfig() {
         const container = document.getElementById('modules-config-container');
