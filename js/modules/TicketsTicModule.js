@@ -546,7 +546,12 @@ ${isTicTeam || ticket.status !== 'cerrado' ? `
                             <div class="text-end ms-3">
                                 ${UIHelpers.getStatusBadge(ticket.status)}
                                 ${UIHelpers.getPriorityBadge(ticket.priority)}
-                                ${ticket.totalCost > 0 ? `<div class="mt-1"><small class="fw-bold">${UIHelpers.formatCurrency(ticket.totalCost)}</small></div>` : ''}
+                                ${(ticket.resolutionTime > 0 || ticket.totalCost > 0) ? `
+                                    <div class="mt-1">
+                                        ${ticket.resolutionTime > 0 ? `<small class="fw-bold text-muted me-2"><i class="fas fa-stopwatch me-1"></i>${ticket.resolutionTime}h</small>` : ''}
+                                        ${ticket.totalCost > 0 ? `<small class="fw-bold">${UIHelpers.formatCurrency(ticket.totalCost)}</small>` : ''}
+                                    </div>
+                                ` : ''}
                             </div>
                         </div>
                     </div>
