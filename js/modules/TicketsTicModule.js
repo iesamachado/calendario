@@ -13,6 +13,7 @@ export class TicketsTicModule {
         this.currentView = 'list'; // 'list' or 'reports'
         this.filterMyTickets = false;
         this.filterHideClosed = false;
+        this.filterUnassigned = false;
 
         // Global function to view/manage ticket
         window.viewTicketTic = async (ticketId) => {
@@ -389,6 +390,10 @@ ${isTicTeam || ticket.status !== 'cerrado' ? `
                     <input class="form-check-input" type="checkbox" id="filter-hide-closed" ${this.filterHideClosed ? 'checked' : ''}>
                     <label class="form-check-label small fw-bold text-muted" for="filter-hide-closed"><i class="fas fa-eye-slash me-1"></i>Ocultar finalizadas</label>
                 </div>
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="filter-unassigned" ${this.filterUnassigned ? 'checked' : ''}>
+                    <label class="form-check-label small fw-bold text-muted" for="filter-unassigned"><i class="fas fa-user-times me-1"></i>Sin asignar</label>
+                </div>
             </div>
             ` : ''}
 
@@ -403,6 +408,8 @@ ${isTicTeam || ticket.status !== 'cerrado' ? `
             if (myTix) myTix.addEventListener('change', (e) => { this.filterMyTickets = e.target.checked; this.loadTicketsList(); });
             const hideCl = document.getElementById('filter-hide-closed');
             if (hideCl) hideCl.addEventListener('change', (e) => { this.filterHideClosed = e.target.checked; this.loadTicketsList(); });
+            const unassigned = document.getElementById('filter-unassigned');
+            if (unassigned) unassigned.addEventListener('change', (e) => { this.filterUnassigned = e.target.checked; this.loadTicketsList(); });
         }
 
         await this.loadTicketsList();
@@ -453,6 +460,11 @@ ${isTicTeam || ticket.status !== 'cerrado' ? `
                 displayTickets = displayTickets.filter(t => 
                     (Array.isArray(t.assignedTo) && t.assignedTo.includes(this.user.uid)) || 
                     t.assignedTo === this.user.uid
+                );
+            }
+            if (this.canManage && this.filterUnassigned) {
+                displayTickets = displayTickets.filter(t => 
+                    !t.assignedTo || (Array.isArray(t.assignedTo) && t.assignedTo.length === 0)
                 );
             }
             
@@ -540,17 +552,23 @@ ${isTicTeam || ticket.status !== 'cerrado' ? `
                                     <i class="fas fa-building me-1"></i>${(this.deptMap && this.deptMap[ticket.requestedByDepartment]) || ticket.requestedByDepartment}
                                     <span class="mx-2">•</span>
                                     <i class="fas fa-clock me-1"></i>${UIHelpers.formatDate(ticket.createdAt)}
-                                    ${(Array.isArray(ticket.assignedTo) && ticket.assignedTo.length > 0) ? `<span class="mx-2">•</span><i class="fas fa-user-check text-primary me-1"></i>${ticket.assignedTo.map(uid => this.usersMap[uid] || 'Asignado').join(', ')}` : (ticket.assignedTo && !Array.isArray(ticket.assignedTo) ? `<span class="mx-2">•</span><i class="fas fa-user-check text-primary me-1"></i>${this.usersMap[ticket.assignedTo] || 'Asignado'}` : '')}
                                 </div>
                             </div>
                             <div class="text-end ms-3">
                                 ${UIHelpers.getStatusBadge(ticket.status)}
                                 ${UIHelpers.getPriorityBadge(ticket.priority)}
+                            </div>
+                        </div>
+                        <div class="mt-2 d-flex justify-content-between align-items-center">
+                            <div>
+                                ${Array.isArray(ticket.assignedTo) && ticket.assignedTo.length > 0 
+                                    ? ticket.assignedTo.map(uid => `<span class="badge bg-primary bg-opacity-10 text-primary border border-primary-subtle me-1"><i class="fas fa-user-cog me-1"></i>${this.usersMap[uid] || 'Técnico'}</span>`).join('') 
+                                    : (ticket.assignedTo && !Array.isArray(ticket.assignedTo) ? `<span class="badge bg-primary bg-opacity-10 text-primary border border-primary-subtle me-1"><i class="fas fa-user-cog me-1"></i>${this.usersMap[ticket.assignedTo] || 'Técnico'}</span>` : '')}
+                            </div>
+                            <div class="text-end">
                                 ${(ticket.resolutionTime > 0 || ticket.totalCost > 0) ? `
-                                    <div class="mt-1">
-                                        ${ticket.resolutionTime > 0 ? `<small class="fw-bold text-muted me-2"><i class="fas fa-stopwatch me-1"></i>${ticket.resolutionTime}h</small>` : ''}
-                                        ${ticket.totalCost > 0 ? `<small class="fw-bold">${UIHelpers.formatCurrency(ticket.totalCost)}</small>` : ''}
-                                    </div>
+                                    ${ticket.resolutionTime > 0 ? `<small class="fw-bold text-muted me-2"><i class="fas fa-stopwatch me-1"></i>${ticket.resolutionTime}h</small>` : ''}
+                                    ${ticket.totalCost > 0 ? `<small class="fw-bold">${UIHelpers.formatCurrency(ticket.totalCost)}</small>` : ''}
                                 ` : ''}
                             </div>
                         </div>
