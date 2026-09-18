@@ -81,6 +81,12 @@ service cloud.firestore {
       allow write: if isAdmin() || hasRole('equipo_tic');
     }
 
+    // Radio Kits inventory (global — not per course)
+    match /radio_kits/{kitId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin() || hasRole('equipo_tic');
+    }
+
     // Settings (global: modules config, current_course, courses_list)
     match /settings/{settingId} {
       allow read: if isAuthenticated();
@@ -181,6 +187,13 @@ service cloud.firestore {
 
       // --- CART RESERVATIONS ---
       match /cart_reservations/{reservationId} {
+        allow read: if isAuthenticated() && (isCurrentCourse(courseId) || canReadHistory());
+        allow create: if isAuthenticated() && isCurrentCourse(courseId) && request.resource.data.userId == request.auth.uid;
+        allow delete: if isAuthenticated() && isCurrentCourse(courseId) && (resource.data.userId == request.auth.uid || isAdmin() || hasRole('equipo_tic'));
+      }
+
+      // --- RADIO KIT RESERVATIONS ---
+      match /radio_kit_reservations/{reservationId} {
         allow read: if isAuthenticated() && (isCurrentCourse(courseId) || canReadHistory());
         allow create: if isAuthenticated() && isCurrentCourse(courseId) && request.resource.data.userId == request.auth.uid;
         allow delete: if isAuthenticated() && isCurrentCourse(courseId) && (resource.data.userId == request.auth.uid || isAdmin() || hasRole('equipo_tic'));

@@ -11,6 +11,7 @@ import { TicketsMaintenanceModule } from './modules/TicketsMaintenanceModule.js'
 import { Tickets3DModule } from './modules/Tickets3DModule.js';
 import { SUMModule } from './modules/SUMModule.js';
 import { LaptopCartsModule } from './modules/LaptopCartsModule.js';
+import { RadioKitsModule } from './modules/RadioKitsModule.js';
 import { AdminModule } from './modules/AdminModule.js';
 import { DepartmentsModule } from './modules/DepartmentsModule.js';
 import { MyDepartmentModule } from './modules/MyDepartmentModule.js';
@@ -206,6 +207,10 @@ class DashboardApp {
 
         this.router.register('/reserva-carros', () => {
             return checkAccess('carts', () => new LaptopCartsModule(mainContent, this.firebaseService, this.user, this.userRoles, this.isAdmin, this.activeCourse));
+        });
+
+        this.router.register('/reserva-radio', () => {
+            return checkAccess('radio_kits', () => new RadioKitsModule(mainContent, this.firebaseService, this.user, this.userRoles, this.isAdmin, this.activeCourse));
         });
 
         if (this.isAdmin) {

@@ -174,6 +174,19 @@ export class LaptopCartsModule {
         }
     }
 
+    
+    getLocationBadgeClass(loc) {
+        if (!loc) return 'bg-secondary';
+        const l = loc.toLowerCase();
+        if (l.includes('baja') || l.match(/\b0\b/)) return 'bg-success';
+        if (l.match(/\b1\b/) || l.includes('primera')) return 'bg-primary';
+        if (l.match(/\b2\b/) || l.includes('segunda')) return 'bg-warning text-dark';
+        if (l.match(/\b3\b/) || l.includes('tercera')) return 'bg-danger';
+        if (l.includes('sum')) return 'bg-info text-dark';
+        if (l.includes('biblio')) return 'bg-dark';
+        return 'bg-secondary';
+    }
+
     updateCalendarSelection() {
         if (!this.calendar || !this.calendar.grid) return;
         this.calendar.render();
@@ -193,12 +206,21 @@ export class LaptopCartsModule {
                 <thead class="table-light">
                     <tr>
                         <th style="width: 15%">Horario (${UIHelpers.formatDate(this.currentDate)})</th>
-                        ${activeCarts.map(cart => `
-                            <th>
-                                <div>${cart.name}</div>
-                                <small class="text-muted fw-normal">${cart.location}</small>
+                        ${activeCarts.map(cart => {
+                            let icon = '<i class="fas fa-laptop-house text-dark"></i>';
+                            if (cart.cartType === 'madera') icon = '<i class="fas fa-box text-warning" title="Carrito de madera"></i>';
+                            if (cart.cartType === 'blanco') icon = '<i class="fas fa-hdd text-secondary" title="Carrito blanco"></i>';
+                            if (cart.cartType === 'blanco_azul') icon = '<i class="fas fa-server text-primary" title="Carrito blanco (puertas azules)"></i>';
+                            
+                            return `
+                            <th style="min-width: 150px; vertical-align: top;">
+                                <div class="mb-1">${icon} ${cart.name}</div>
+                                <span class="badge ${this.getLocationBadgeClass(cart.location)} mb-1"><i class="fas fa-map-marker-alt me-1"></i>${cart.location}</span>
+                                ${cart.laptopCount ? `<small class="text-primary fw-bold d-block"><i class="fas fa-laptop me-1"></i>${cart.laptopCount} portátiles</small>` : ''}
+                                ${cart.dotationYear ? `<small class="text-secondary d-block" style="font-size: 0.75rem;">Año dotación: ${cart.dotationYear}</small>` : ''}
+                                ${cart.description ? `<div class="mt-2 text-start" style="font-size: 0.8rem; font-weight: normal; font-style: italic; color: #666; background: #f8f9fa; padding: 4px; border-radius: 4px; border-left: 3px solid #ccc;">${cart.description}</div>` : ''}
                             </th>
-                        `).join('')}
+                        `}).join('')}
                     </tr>
                 </thead>
                 <tbody>
@@ -556,12 +578,22 @@ export class LaptopCartsModule {
 
             container.innerHTML = `
                 <div class="list-group">
-                    ${this.carts.map(cart => `
+                    ${this.carts.map(cart => {
+                        let icon = '<i class="fas fa-laptop-house text-dark me-2"></i>';
+                        if (cart.cartType === 'madera') icon = '<i class="fas fa-box text-warning me-2" title="Carrito de madera"></i>';
+                        if (cart.cartType === 'blanco') icon = '<i class="fas fa-hdd text-secondary me-2" title="Carrito blanco"></i>';
+                        if (cart.cartType === 'blanco_azul') icon = '<i class="fas fa-server text-primary me-2" title="Carrito blanco (puertas azules)"></i>';
+                        
+                        return `
                         <div class="list-group-item d-flex justify-content-between align-items-center">
                             <div>
-                                <h5 class="mb-1">${cart.name} ${!cart.active ? '<span class="badge bg-danger">Inactivo</span>' : ''}</h5>
-                                <p class="mb-1 text-muted">${cart.description}</p>
-                                <small class="text-primary"><i class="fas fa-map-marker-alt me-1"></i>${cart.location}</small>
+                                <h5 class="mb-1">${icon}${cart.name} ${!cart.active ? '<span class="badge bg-danger">Inactivo</span>' : ''}</h5>
+                                <p class="mb-1 text-muted" style="font-size: 0.9rem;">${cart.description}</p>
+                                <div class="d-flex gap-3 align-items-center mt-2">
+                                    <span class="badge ${this.getLocationBadgeClass(cart.location)}"><i class="fas fa-map-marker-alt me-1"></i>${cart.location}</span>
+                                    ${cart.laptopCount ? `<small class="text-secondary"><i class="fas fa-laptop me-1"></i>${cart.laptopCount} uds.</small>` : ''}
+                                    ${cart.dotationYear ? `<small class="text-secondary"><i class="fas fa-calendar-alt me-1"></i>Año: ${cart.dotationYear}</small>` : ''}
+                                </div>
                             </div>
                             <div>
                                 <button class="btn btn-sm btn-outline-secondary me-2" onclick="window.currentCartsModule.editCart('${cart.id}')">
@@ -572,7 +604,7 @@ export class LaptopCartsModule {
                                 </button>
                             </div>
                         </div>
-                    `).join('')}
+                    `}).join('')}
                 </div>
             `;
 
@@ -622,6 +654,24 @@ export class LaptopCartsModule {
                             <input type="text" class="form-control" id="cart-location" value="${cart ? cart.location : ''}" placeholder="Ej: Planta 1">
                         </div>
                         <div class="mb-3">
+                            <label class="form-label">Tipo de carro</label>
+                            <select class="form-select" id="cart-type">
+                                <option value="blanco_azul" ${cart && cart.cartType === 'blanco_azul' ? 'selected' : ''}>Carrito blanco con puertas azules</option>
+                                <option value="blanco" ${cart && cart.cartType === 'blanco' ? 'selected' : ''}>Carrito blanco</option>
+                                <option value="madera" ${cart && cart.cartType === 'madera' ? 'selected' : ''}>Carrito de madera</option>
+                            </select>
+                        </div>
+                        <div class="row">
+                            <div class="col-6 mb-3">
+                                <label class="form-label">Nº de portátiles</label>
+                                <input type="number" class="form-control" id="cart-laptops" value="${cart ? (cart.laptopCount || '') : ''}" placeholder="Ej: 30">
+                            </div>
+                            <div class="col-6 mb-3">
+                                <label class="form-label">Año de dotación</label>
+                                <input type="number" class="form-control" id="cart-year" value="${cart ? (cart.dotationYear || '') : ''}" placeholder="Ej: 2023">
+                            </div>
+                        </div>
+                        <div class="mb-3">
                             <label class="form-label">Descripción</label>
                             <textarea class="form-control" id="cart-desc" rows="2">${cart ? cart.description : ''}</textarea>
                         </div>
@@ -647,6 +697,9 @@ export class LaptopCartsModule {
             const location = document.getElementById('cart-location').value;
             const description = document.getElementById('cart-desc').value;
             const active = document.getElementById('cart-active').checked;
+            const cartType = document.getElementById('cart-type').value;
+            const laptopCount = document.getElementById('cart-laptops').value;
+            const dotationYear = document.getElementById('cart-year').value;
 
             if (!name || !location) {
                 UIHelpers.showToast('Nombre y Ubicación son obligatorios', 'error');
@@ -655,9 +708,9 @@ export class LaptopCartsModule {
 
             try {
                 if (cart) {
-                    await this.firebaseService.updateCart(cart.id, { name, location, description, active });
+                    await this.firebaseService.updateCart(cart.id, { name, location, description, active, cartType, laptopCount, dotationYear });
                 } else {
-                    await this.firebaseService.createCart({ name, location, description, active });
+                    await this.firebaseService.createCart({ name, location, description, active, cartType, laptopCount, dotationYear });
                 }
                 UIHelpers.showToast('Guardado correctamente', 'success');
                 bsModal.hide();

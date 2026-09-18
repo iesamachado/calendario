@@ -728,24 +728,7 @@ export class FirebaseService {
         if (data.status === 'resuelto' || data.status === 'cerrado') {
             const snap = await getDoc(ticketRef);
             if (snap.exists() && !snap.data().resolvedAt) {
-                const createdAt = snap.data().createdAt?.toDate();
-                if (createdAt) {
-                    const now = new Date();
-                    const diffTime = Math.abs(now - createdAt);
-                    // Convert to hours with 1 decimal
-                    data.resolutionTime = parseFloat((diffTime / (1000 * 60 * 60)).toFixed(1));
-                    data.resolvedAt = now;
-
-                    // Calculate labor cost for TIC tickets (20€/hour)
-                    if (type === 'tic') {
-                        const laborCost = data.resolutionTime * 20; // resolutionTime is already in hours
-                        data.laborCost = Math.round(laborCost * 100) / 100; // Round to 2 decimals
-
-                        // Update total cost
-                        const equipmentCost = snap.data().equipmentCost || 0;
-                        data.totalCost = data.laborCost + equipmentCost;
-                    }
-                }
+                data.resolvedAt = new Date();
             }
         }
 
@@ -759,6 +742,39 @@ export class FirebaseService {
         }
 
         await updateDoc(ticketRef, data);
+    }
+
+    
+    async addTimeLog(ticketId, type, courseId, timeLog) {
+        if (!ticketId || !type || !timeLog.userId || !timeLog.minutes) throw new Error('Missing timeLog data');
+        const collPath = courseId ? `courses/${courseId}/tickets_${type}` : `tickets_${type}`;
+        const ticketRef = doc(this.db, collPath, ticketId);
+        
+        const snap = await getDoc(ticketRef);
+        if (!snap.exists()) throw new Error('Ticket not found');
+        
+        const data = snap.data();
+        const currentLogs = data.timeLogs || [];
+        const newLogs = [...currentLogs, { ...timeLog, createdAt: new Date() }];
+        
+        // Recalculate total time
+        const totalMinutes = newLogs.reduce((acc, log) => acc + Number(log.minutes), 0);
+        const resolutionTime = parseFloat((totalMinutes / 60).toFixed(2));
+        
+        const updates = {
+            timeLogs: newLogs,
+            resolutionTime: resolutionTime
+        };
+        
+        if (type === 'tic') {
+            const laborCost = resolutionTime * 20; // 20€/hour
+            updates.laborCost = Math.round(laborCost * 100) / 100;
+            const equipmentCost = data.equipmentCost || 0;
+            updates.totalCost = updates.laborCost + equipmentCost;
+        }
+        
+        await updateDoc(ticketRef, updates);
+        return updates;
     }
 
     async deleteTicket(type, ticketId, courseId) {
@@ -1149,6 +1165,77 @@ export class FirebaseService {
 
     async cancelCartReservation(reservationId, courseId) {
         await deleteDoc(this.courseDoc('cart_reservations', reservationId, courseId));
+    }
+
+
+    // --- Radio Kits ---
+
+    async getRadioKits() {
+        const q = query(collection(this.db, 'radio_kits'));
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    }
+
+    async createRadioKit(data) {
+        await addDoc(collection(this.db, 'radio_kits'), {
+            ...data,
+            active: true,
+            createdAt: new Date()
+        });
+    }
+
+    async updateRadioKit(id, data) {
+        await updateDoc(doc(this.db, 'radio_kits', id), data);
+    }
+
+    async deleteRadioKit(id) {
+        await deleteDoc(doc(this.db, 'radio_kits', id));
+    }
+
+    async getRadioKitReservations(dateStr, courseId) {
+        const q = query(this.courseCol('radio_kit_reservations', courseId), where('date', '==', dateStr));
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    }
+
+    async getRadioKitReservationsInRange(startDate, endDate, courseId) {
+        const q = query(
+            this.courseCol('radio_kit_reservations', courseId),
+            where('date', '>=', startDate),
+            where('date', '<=', endDate)
+        );
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    }
+
+    async reserveRadioKit(dateStr, slotIndex, slotLabel, radioKitId, userUid, userName, comment = '', courseId) {
+        const reservationData = {
+            date: dateStr,
+            slotIndex: slotIndex,
+            slotLabel: slotLabel,
+            radioKitId: radioKitId,
+            userId: userUid,
+            userName: userName,
+            comment: comment || '',
+            createdAt: new Date()
+        };
+        await addDoc(this.courseCol('radio_kit_reservations', courseId), reservationData);
+    }
+
+    async cancelRadioKitReservation(reservationId, courseId) {
+        await deleteDoc(this.courseDoc('radio_kit_reservations', reservationId, courseId));
+    }
+
+    async getReservationsForRadioKitInRange(radioKitId, slotIndex, startDate, userId, courseId) {
+        const q = query(
+            this.courseCol('radio_kit_reservations', courseId),
+            where('radioKitId', '==', radioKitId),
+            where('slotIndex', '==', slotIndex),
+            where('date', '>=', startDate)
+        );
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+            .filter(r => r.userId === userId);
     }
 
     async getReservationsForCartInRange(cartId, slotIndex, startDateStr, userId, courseId) {

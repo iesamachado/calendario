@@ -11,6 +11,8 @@ export class TicketsTicModule {
         this.canManage = userRoles.includes('equipo_tic');
 
         this.currentView = 'list'; // 'list' or 'reports'
+        this.filterMyTickets = false;
+        this.filterHideClosed = false;
 
         // Global function to view/manage ticket
         window.viewTicketTic = async (ticketId) => {
@@ -27,8 +29,9 @@ export class TicketsTicModule {
             const ticUsers = users.filter(u => u.roles && u.roles.includes('equipo_tic'));
 
             // Build assignee options
+            const assignedArray = Array.isArray(ticket.assignedTo) ? ticket.assignedTo : (ticket.assignedTo ? [ticket.assignedTo] : []);
             const assigneeOptions = ticUsers.map(u =>
-                `<option value="${u.uid}" ${ticket.assignedTo === u.uid ? 'selected' : ''}>${u.displayName || u.email}</option>`
+                `<option value="${u.uid}" ${assignedArray.includes(u.uid) ? 'selected' : ''}>${u.displayName || u.email}</option>`
             ).join('');
 
             const modal = document.createElement('div');
@@ -97,7 +100,44 @@ export class TicketsTicModule {
                                         </div>
                                     </div>
 
-                                    ${isTicTeam || ticket.status !== 'cerrado' ? `
+                                    
+                                    <div class="mb-3 mt-4">
+                                        <label class="form-label fw-bold"><i class="fas fa-clock me-2"></i>Registro de Tiempo</label>
+                                        <div class="bg-light border rounded p-3 mb-2">
+                                            ${(ticket.timeLogs || []).length === 0 ? '<div class="text-muted small">No hay registros de tiempo</div>' : 
+                                                '<ul class="list-unstyled mb-0 small">' + (ticket.timeLogs || []).map(log => 
+                                                    '<li class="mb-1"><i class="fas fa-user text-primary me-1"></i>' + (users.find(u => u.uid === log.userId) || {}).displayName + ': <strong>' + log.minutes + ' min</strong> <span class="text-muted">(' + UIHelpers.formatDate(log.createdAt?.toDate ? log.createdAt.toDate() : new Date(log.createdAt)) + ')</span>' + (log.description ? ' - <em>' + log.description + '</em>' : '') + '</li>'
+                                                ).join('') + '</ul>'
+                                            }
+                                        </div>
+                                        ${isTicTeam ? `
+                                        <div class="card border-0 shadow-sm">
+                                            <div class="card-body p-2">
+                                                <div class="row g-2 align-items-center mb-2">
+                                                    <div class="col-sm-12">
+                                                        <select class="form-select form-select-sm" id="new-log-user">
+                                                            ${assignedArray.length > 0 ? 
+                                                                assignedArray.map(uid => `<option value="${uid}">${(users.find(u => u.uid === uid) || {}).displayName || 'Usuario'}</option>`).join('') 
+                                                                : `<option value="${this.user.uid}">${this.user.displayName || this.user.email}</option>`}
+                                                        </select>
+                                                    </div>
+                                                </div>
+                                                <div class="row g-2 align-items-center">
+                                                    <div class="col-sm-3">
+                                                        <input type="number" class="form-control form-control-sm" id="new-log-min" placeholder="Min">
+                                                    </div>
+                                                    <div class="col-sm-6">
+                                                        <input type="text" class="form-control form-control-sm" id="new-log-desc" placeholder="Descripción breve">
+                                                    </div>
+                                                    <div class="col-sm-3">
+                                                        <button type="button" class="btn btn-sm btn-primary w-100" id="btn-add-time">Añadir</button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        ` : ''}
+                                    </div>
+${isTicTeam || ticket.status !== 'cerrado' ? `
                                         <div class="mt-4">
                                             <label class="form-label fw-bold">Nueva Observación</label>
                                             <textarea class="form-control" id="ticket-new-observation" rows="2" placeholder="Escribe una observación..."></textarea>
@@ -137,18 +177,21 @@ export class TicketsTicModule {
                                             ${isTicTeam ? `
                                                 <div class="mb-3">
                                                     <label class="form-label small text-muted">Asignado a</label>
-                                                    <select class="form-select form-select-sm" id="ticket-assigned">
-                                                        <option value="">-- Sin Asignar --</option>
-                                                        ${assigneeOptions}
-                                                    </select>
+                                                    <div class="border rounded p-2 bg-white" id="ticket-assigned">
+                                                        ${ticUsers.map(u => `
+                                                            <div class="form-check mb-1">
+                                                                <input class="form-check-input assignee-checkbox" type="checkbox" value="${u.uid}" id="assign-${u.uid}" ${assignedArray.includes(u.uid) ? 'checked' : ''}>
+                                                                <label class="form-check-label small" for="assign-${u.uid}" style="cursor: pointer;">
+                                                                    ${u.displayName || u.email}
+                                                                </label>
+                                                            </div>
+                                                        `).join('')}
+                                                    </div>
                                                 </div>
-                                            ` : ticket.assignedTo ? `
+                                            ` : assignedArray.length > 0 ? `
                                                 <div class="mb-3">
                                                     <small class="text-muted d-block">Asignado a</small>
-                                                    <div class="d-flex align-items-center">
-                                                        <i class="fas fa-user-check me-2 text-primary"></i>
-                                                        <strong>${(users.find(u => u.uid === ticket.assignedTo) || {}).displayName || 'Usuario'}</strong>
-                                                    </div>
+                                                    <strong>${assignedArray.map(uid => (users.find(u => u.uid === uid) || {}).displayName || 'Usuario').join(', ')}</strong>
                                                 </div>
                                             ` : ''}
 
@@ -157,13 +200,13 @@ export class TicketsTicModule {
                                                 <h6 class="fw-bold mb-2">Gestión</h6>
                                                 
                                                 <div class="mb-2">
-                                                    <label class="form-label small text-muted">Tiempo Resolución (min)</label>
-                                                    <input type="number" class="form-control form-control-sm" id="ticket-time" value="${ticket.resolutionTime || 0}">
+                                                    <label class="form-label small text-muted">Tiempo Total Registrado (horas)</label>
+                                                    <div class="fw-bold">${ticket.resolutionTime || 0} h</div>
                                                 </div>
 
                                                 <div class="mb-2">
-                                                    <label class="form-label small text-muted">Coste Total (€)</label>
-                                                    <input type="number" class="form-control form-control-sm" id="ticket-cost" value="${ticket.totalCost || 0}" step="0.01">
+                                                    <label class="form-label small text-muted">Coste Total Calculado (€)</label>
+                                                    <div class="fw-bold">${ticket.totalCost || 0} €</div>
                                                 </div>
                                             ` : ''}
                                         </div>
@@ -235,22 +278,27 @@ export class TicketsTicModule {
                                 });
                             }
 
-                            const newAssignedTo = document.getElementById('ticket-assigned').value;
-                            if (newAssignedTo !== ticket.assignedTo) {
+                            const checkboxesAssigned = modal.querySelectorAll('.assignee-checkbox:checked');
+                            const newAssignedTo = Array.from(checkboxesAssigned).map(cb => cb.value);
+                            const currentAssigned = Array.isArray(ticket.assignedTo) ? ticket.assignedTo : (ticket.assignedTo ? [ticket.assignedTo] : []);
+                            if (JSON.stringify(newAssignedTo.sort()) !== JSON.stringify(currentAssigned.sort())) {
                                 updates.assignedTo = newAssignedTo;
-                                const newUser = users.find(u => u.uid === newAssignedTo);
-                                const newUserName = newUser ? (newUser.displayName || newUser.email) : 'Sin asignar';
+                                const newUserNames = newAssignedTo.map(uid => {
+                                    const u = users.find(x => x.uid === uid);
+                                    return u ? (u.displayName || u.email) : 'Usuario';
+                                });
+                                const contentText = newUserNames.length > 0 ? `Asignado a ${newUserNames.join(', ')}` : 'Desasignado';
                                 newHistoryEntries.push({
                                     timestamp: new Date(),
                                     type: 'assignment',
                                     userId: this.user.uid,
                                     userName: this.user.displayName || this.user.email,
-                                    content: `Asignado a ${newUserName}`
+                                    content: contentText
                                 });
                             }
 
-                            updates.resolutionTime = parseInt(document.getElementById('ticket-time').value) || 0;
-                            updates.totalCost = parseFloat(document.getElementById('ticket-cost').value) || 0;
+                            
+                            
                         }
 
                         if (Object.keys(updates).length > 2 || newHistoryEntries.length > 0) { // >2 because updatedAt/updatedBy are always there
@@ -273,6 +321,38 @@ export class TicketsTicModule {
                     }
                 });
             }
+
+            
+
+            const btnAddTime = modal.querySelector('#btn-add-time');
+            if (btnAddTime) {
+                btnAddTime.addEventListener('click', async (e) => {
+                    e.preventDefault();
+                    console.log('Add time clicked');
+                    const min = modal.querySelector('#new-log-min').value;
+                    const desc = modal.querySelector('#new-log-desc').value;
+                    if (!min || isNaN(min) || min <= 0) return UIHelpers.showToast('Introduce minutos válidos', 'error');
+                    
+                    try {
+                        btnAddTime.disabled = true;
+                        btnAddTime.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+                        await this.firebaseService.addTimeLog(ticket.id, 'tic', this.courseId, {
+                            userId: modal.querySelector('#new-log-user').value,
+                            minutes: parseInt(min),
+                            description: desc || ''
+                        });
+                        UIHelpers.showToast('Tiempo registrado', 'success');
+                        await this.loadTicketsList();
+                        bsModal.hide();
+                    } catch (e) {
+                        console.error(e);
+                        UIHelpers.showToast('Error al registrar tiempo', 'error');
+                        btnAddTime.disabled = false;
+                        btnAddTime.innerHTML = 'Añadir';
+                    }
+                });
+            }
+
 
             modal.addEventListener('hidden.bs.modal', () => modal.remove());
         };
@@ -299,6 +379,19 @@ export class TicketsTicModule {
                 </div>
             </div>
 
+            ${this.canManage ? `
+            <div id="tic-filters" class="d-flex mb-3 gap-4 bg-light p-2 rounded border">
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="filter-my-tickets" ${this.filterMyTickets ? 'checked' : ''}>
+                    <label class="form-check-label small fw-bold text-muted" for="filter-my-tickets"><i class="fas fa-user-tag me-1"></i>Solo mis asignadas</label>
+                </div>
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="filter-hide-closed" ${this.filterHideClosed ? 'checked' : ''}>
+                    <label class="form-check-label small fw-bold text-muted" for="filter-hide-closed"><i class="fas fa-eye-slash me-1"></i>Ocultar finalizadas</label>
+                </div>
+            </div>
+            ` : ''}
+
             <div id="tickets-content" class="mt-4"></div>
         `;
 
@@ -306,6 +399,10 @@ export class TicketsTicModule {
 
         if (this.canManage) {
             document.getElementById('btn-view-reports').addEventListener('click', () => this.toggleView());
+            const myTix = document.getElementById('filter-my-tickets');
+            if (myTix) myTix.addEventListener('change', (e) => { this.filterMyTickets = e.target.checked; this.loadTicketsList(); });
+            const hideCl = document.getElementById('filter-hide-closed');
+            if (hideCl) hideCl.addEventListener('change', (e) => { this.filterHideClosed = e.target.checked; this.loadTicketsList(); });
         }
 
         await this.loadTicketsList();
@@ -313,6 +410,10 @@ export class TicketsTicModule {
 
     toggleView() {
         this.currentView = this.currentView === 'list' ? 'reports' : 'list';
+        
+        const filtersDiv = document.getElementById('tic-filters');
+        if (filtersDiv) filtersDiv.style.display = this.currentView === 'reports' ? 'none' : 'flex';
+
         if (this.currentView === 'reports') {
             this.loadReports();
         } else {
@@ -347,14 +448,23 @@ export class TicketsTicModule {
                 return;
             }
 
-            // Group tickets by status
-            const openTickets = tickets.filter(t => t.status === 'abierto');
-            const inProgressTickets = tickets.filter(t => t.status === 'en_progreso');
-            const resolvedTickets = tickets.filter(t => t.status === 'resuelto' || t.status === 'cerrado');
+            let displayTickets = tickets;
+            if (this.canManage && this.filterMyTickets) {
+                displayTickets = displayTickets.filter(t => 
+                    (Array.isArray(t.assignedTo) && t.assignedTo.includes(this.user.uid)) || 
+                    t.assignedTo === this.user.uid
+                );
+            }
+            
+            const openTickets = displayTickets.filter(t => t.status === 'abierto');
+            const inProgressTickets = displayTickets.filter(t => t.status === 'en_progreso');
+            const resolvedTickets = displayTickets.filter(t => t.status === 'resuelto' || t.status === 'cerrado');
+            
+            const colClass = (this.canManage && this.filterHideClosed) ? 'col-md-6' : 'col-md-4';
 
             container.innerHTML = `
                 <div class="row g-3">
-                    <div class="col-md-4">
+                    <div class="${colClass}">
                         <div class="card h-100 border-0 bg-light">
                             <div class="card-header bg-danger text-white fw-bold d-flex justify-content-between align-items-center">
                                 <span><i class="fas fa-exclamation-circle me-2"></i>Pendientes</span>
@@ -366,7 +476,7 @@ export class TicketsTicModule {
                         </div>
                     </div>
                     
-                    <div class="col-md-4">
+                    <div class="${colClass}">
                         <div class="card h-100 border-0 bg-light">
                             <div class="card-header bg-warning text-dark fw-bold d-flex justify-content-between align-items-center">
                                 <span><i class="fas fa-spinner me-2"></i>En Progreso</span>
@@ -378,7 +488,8 @@ export class TicketsTicModule {
                         </div>
                     </div>
 
-                    <div class="col-md-4">
+                    ${(this.canManage && this.filterHideClosed) ? '' : `
+                    <div class="${colClass}">
                         <div class="card h-100 border-0 bg-light">
                             <div class="card-header bg-success text-white fw-bold d-flex justify-content-between align-items-center">
                                 <span><i class="fas fa-check-circle me-2"></i>Finalizadas</span>
@@ -389,6 +500,7 @@ export class TicketsTicModule {
                             </div>
                         </div>
                     </div>
+                    `}
                 </div>
             `;
 
@@ -428,7 +540,7 @@ export class TicketsTicModule {
                                     <i class="fas fa-building me-1"></i>${(this.deptMap && this.deptMap[ticket.requestedByDepartment]) || ticket.requestedByDepartment}
                                     <span class="mx-2">•</span>
                                     <i class="fas fa-clock me-1"></i>${UIHelpers.formatDate(ticket.createdAt)}
-                                    ${ticket.assignedTo ? `<span class="mx-2">•</span><i class="fas fa-user-check text-primary me-1"></i>${this.usersMap[ticket.assignedTo] || 'Asignado'}` : ''}
+                                    ${(Array.isArray(ticket.assignedTo) && ticket.assignedTo.length > 0) ? `<span class="mx-2">•</span><i class="fas fa-user-check text-primary me-1"></i>${ticket.assignedTo.map(uid => this.usersMap[uid] || 'Asignado').join(', ')}` : (ticket.assignedTo && !Array.isArray(ticket.assignedTo) ? `<span class="mx-2">•</span><i class="fas fa-user-check text-primary me-1"></i>${this.usersMap[ticket.assignedTo] || 'Asignado'}` : '')}
                                 </div>
                             </div>
                             <div class="text-end ms-3">
@@ -485,7 +597,8 @@ export class TicketsTicModule {
         const bsModal = new bootstrap.Modal(modal);
         bsModal.show();
 
-        document.getElementById('btn-save-ticket').addEventListener('click', async () => {
+        
+            document.getElementById('btn-save-ticket').addEventListener('click', async () => {
             const title = document.getElementById('ticket-title').value;
             const description = document.getElementById('ticket-description').value;
             const priority = document.getElementById('ticket-priority').value;
@@ -549,12 +662,81 @@ export class TicketsTicModule {
             }
 
             const stats = this.firebaseService.calculateStats(tickets, 'tic', deptMap);
+            
+            // Calculate time log stats for TIC
+            const userTimeMap = {};
+            let totalLoggedMinutes = 0;
+            let firstLogDate = new Date();
+
+            tickets.forEach(t => {
+                if (t.timeLogs && t.timeLogs.length > 0) {
+                    t.timeLogs.forEach(log => {
+                        const mins = parseInt(log.minutes) || 0;
+                        const uId = log.userId;
+                        if (!userTimeMap[uId]) userTimeMap[uId] = 0;
+                        userTimeMap[uId] += mins;
+                        totalLoggedMinutes += mins;
+                        
+                        const logDate = log.createdAt instanceof Date ? log.createdAt : (log.createdAt?.toDate ? log.createdAt.toDate() : new Date(log.createdAt));
+                        if (logDate < firstLogDate) firstLogDate = logDate;
+                    });
+                }
+            });
+
+            // Fetch users to map names
+            const users = await this.firebaseService.getAllUsers();
+            const ticUsers = users.filter(u => u.roles && u.roles.includes('equipo_tic'));
+            const ticUserMap = {};
+            ticUsers.forEach(u => ticUserMap[u.uid] = u.displayName || u.email);
+
+            // Weeks calculation
+            const now = new Date();
+            const msInWeek = 1000 * 60 * 60 * 24 * 7;
+            let weeksElapsed = Math.max(1, Math.ceil((now - firstLogDate) / msInWeek));
+            
+            const totalLoggedHours = (totalLoggedMinutes / 60).toFixed(1);
+            const avgWeeklyHours = (totalLoggedHours / weeksElapsed).toFixed(1);
+            
+            const userTimeData = Object.entries(userTimeMap).map(([uid, mins]) => ({
+                name: ticUserMap[uid] || 'Desconocido',
+                hours: (mins / 60).toFixed(1),
+                avg: ((mins / 60) / weeksElapsed).toFixed(1)
+            })).sort((a, b) => b.hours - a.hours);
+
 
             container.innerHTML = `
                 <div class="d-flex justify-content-between align-items-center mb-4">
                      <h4 class="mb-0">Reporte Curso Escolar ${UIHelpers.getSchoolYearLabel()}</h4>
                 </div>
                 
+                
+                <div class="row g-4 mb-4">
+                    <div class="col-md-6">
+                        <div class="card text-white bg-dark">
+                            <div class="card-body">
+                                <h6>Horas Totales Invertidas</h6>
+                                <h2 class="mb-0">${totalLoggedHours} h <small class="fs-6 fw-normal">(${avgWeeklyHours} h/semana)</small></h2>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card bg-white border">
+                            <div class="card-header bg-transparent fw-bold">Desglose por Persona</div>
+                            <div class="card-body p-0">
+                                <ul class="list-group list-group-flush">
+                                    ${userTimeData.map(ud => `
+                                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                                            <span><i class="fas fa-user-clock text-primary me-2"></i>${ud.name}</span>
+                                            <span><strong>${ud.hours}h</strong> <small class="text-muted">(${ud.avg}h/sem)</small></span>
+                                        </li>
+                                    `).join('')}
+                                    ${userTimeData.length === 0 ? '<li class="list-group-item text-muted">No hay horas registradas</li>' : ''}
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="row g-4 mb-4">
                     <div class="col-md-3">
                         <div class="card text-white bg-primary">
