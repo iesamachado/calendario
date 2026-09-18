@@ -391,7 +391,7 @@ export class Calendar {
                             deleteBtn.onclick = (e) => {
                                 e.stopPropagation();
                                 if (confirm('¿Seguro que quieres borrar este evento?')) {
-                                    this.firebaseService.removeCalendarEvent(dateStr, event)
+                                    this.firebaseService.removeCalendarEvent(dateStr, event, this.courseId)
                                         .then(() => {
                                             if (window.UIHelpers) window.UIHelpers.showToast('Evento eliminado', 'success');
                                         })
