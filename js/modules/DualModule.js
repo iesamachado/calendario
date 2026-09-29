@@ -107,6 +107,9 @@ export class DualModule {
                             <div class="d-flex justify-content-between align-items-center mb-3">
                                 <h5 class="card-title fw-bold">Alumnos Dual</h5>
                                 <div>
+                                    <button class="btn btn-secondary btn-sm me-2" id="btn-import-csv">
+                                        <i class="fas fa-file-csv me-2"></i>Importar Datos (CSV)
+                                    </button>
                                     <button class="btn btn-success btn-sm me-2" id="btn-import-classroom">
                                         <i class="fab fa-google me-2"></i>Importar de Classroom
                                     </button>
@@ -188,6 +191,7 @@ export class DualModule {
         document.getElementById('btn-add-company').addEventListener('click', () => this.openCompanyModal());
         document.getElementById('btn-add-student').addEventListener('click', () => this.openStudentModal());
         document.getElementById('btn-import-classroom').addEventListener('click', () => this.openClassroomImportModal());
+        document.getElementById('btn-import-csv').addEventListener('click', () => this.openCSVImportModal());
 
         // Config Buttons
         document.getElementById('btn-add-cycle').addEventListener('click', () => this.addConfigItem('cycles', 'new-cycle-input'));
@@ -341,6 +345,7 @@ export class DualModule {
         };
 
         // Filters UI
+        const isHistorical = this.courseId !== this.currentCourse;
         const filtersHtml = `
             <div class="mb-3 d-flex gap-2 align-items-center flex-wrap">
                 <span class="fw-bold me-2"><i class="fas fa-filter me-1"></i>Filtros:</span>
@@ -356,6 +361,7 @@ export class DualModule {
                 <button class="btn btn-sm ${this.companyFilters.secondYear ? 'btn-primary' : 'btn-outline-secondary'} btn-filter-toggle" data-filter="secondYear">
                     2º Curso
                 </button>
+                ${isHistorical ? `<button class="btn btn-sm btn-warning ms-2" id="btn-migrate-companies"><i class="fas fa-exchange-alt me-1"></i>Migrar Seleccionadas al Curso Actual</button>` : ''}
                 <span class="ms-auto text-muted small">Mostrando ${displayCompanies.length} de ${this.companies.length}</span>
             </div>
         `;
@@ -373,6 +379,7 @@ export class DualModule {
             <table class="table table-hover align-middle">
                 <thead>
                     <tr>
+                        ${isHistorical ? `<th><input type="checkbox" class="form-check-input" id="selectAllCompanies"></th>` : ''}
                         ${buildSortHeader('Estado', 'status')}
                         ${buildSortHeader('Empresa', 'name')}
                         ${buildSortHeader('Prospección', 'prospectorName')}
@@ -391,6 +398,7 @@ export class DualModule {
 
             return `
                         <tr class="${c._statusColor} clickable-row" data-id="${c.id}" style="cursor:pointer">
+                            ${isHistorical ? `<td onclick="event.stopPropagation()"><input type="checkbox" class="form-check-input company-checkbox" value="${c.id}"></td>` : ''}
                             <td>
                                 <span class="badge bg-white text-dark border">${c._statusLabel}</span>
                             </td>
@@ -467,6 +475,27 @@ export class DualModule {
                 this.openInteractionsModal(company, 'company');
             });
         });
+
+        if (isHistorical) {
+            const selectAll = document.getElementById('selectAllCompanies');
+            if (selectAll) {
+                selectAll.addEventListener('change', (e) => {
+                    const checkboxes = container.querySelectorAll('.company-checkbox');
+                    checkboxes.forEach(cb => cb.checked = e.target.checked);
+                });
+            }
+
+            const btnMigrate = document.getElementById('btn-migrate-companies');
+            if (btnMigrate) {
+                btnMigrate.addEventListener('click', () => {
+                    const selectedIds = Array.from(container.querySelectorAll('.company-checkbox:checked')).map(cb => cb.value);
+                    if (selectedIds.length === 0) {
+                        return alert('Selecciona al menos una empresa para migrar.');
+                    }
+                    this.migrateCompaniesToCurrentYear(selectedIds);
+                });
+            }
+        }
     }
 
     toggleCompanyFilter(filterKey) {
@@ -761,6 +790,60 @@ export class DualModule {
         modal.addEventListener('hidden.bs.modal', () => modal.remove());
     }
 
+    async migrateCompaniesToCurrentYear(selectedIds) {
+        if (!await UIHelpers.confirm(`¿Seguro que quieres migrar ${selectedIds.length} empresas al curso actual? Se copiarán sus datos y seguimiento de llamadas, pero NO los alumnos.`)) {
+            return;
+        }
+
+        try {
+            // Mostrar spinner de carga si es posible
+            UIHelpers.showToast('Iniciando migración...', 'info');
+
+            let migratedCount = 0;
+            for (const id of selectedIds) {
+                const companyToMigrate = this.companies.find(c => c.id === id);
+                if (!companyToMigrate) continue;
+
+                // Copiar datos base (excluyendo campos calculados y el id)
+                const newCompanyData = { ...companyToMigrate };
+                delete newCompanyData.id;
+                delete newCompanyData._computedStatus;
+                delete newCompanyData._statusLabel;
+                delete newCompanyData._statusColor;
+                delete newCompanyData._sortBy;
+                delete newCompanyData._prospectorName;
+
+                // Crear en el curso actual
+                const newCompanyId = await this.firebaseService.createCompany(newCompanyData, this.currentCourse);
+
+                // Migrar interacciones (seguimiento de llamadas)
+                const interactions = await this.firebaseService.getDualInteractions(companyToMigrate.id, this.courseId);
+                for (const interaction of interactions) {
+                    const newInteractionData = { ...interaction };
+                    delete newInteractionData.id;
+                    newInteractionData.relatedId = newCompanyId; // Vincular al nuevo ID de la empresa
+                    await this.firebaseService.addDualInteraction(newInteractionData, this.currentCourse);
+                }
+
+                migratedCount++;
+            }
+
+            UIHelpers.showToast(`Migradas ${migratedCount} empresas con éxito.`, 'success');
+            
+            // Optionally, switch context to current course to see results
+            const dualSelect = document.getElementById('dual-course-select');
+            if (dualSelect) {
+                dualSelect.value = this.currentCourse;
+                this.courseId = this.currentCourse;
+                this.render();
+            }
+
+        } catch (error) {
+            console.error(error);
+            UIHelpers.showToast('Ocurrió un error durante la migración.', 'error');
+        }
+    }
+
     // ==================== STUDENTS ====================
 
     async loadStudents() {
@@ -845,6 +928,9 @@ export class DualModule {
                     <option value="">Todos los Ciclos</option>
                     ${this.config.cycles.map(c => `<option value="${c}" ${this.studentFilters.cycle === c ? 'selected' : ''}>${c}</option>`).join('')}
                 </select>
+                <button class="btn btn-danger btn-sm d-none ms-2" id="btn-delete-selected-st">
+                    <i class="fas fa-trash me-1"></i>Borrar seleccionados (<span id="delete-st-count">0</span>)
+                </button>
                 <span class="ms-auto text-muted small">Mostrando ${displayStudents.length} de ${this.students.length}</span>
             </div>
         `;
@@ -860,11 +946,15 @@ export class DualModule {
             <table class="table table-hover align-middle">
                 <thead>
                     <tr>
+                        <th style="width: 40px;">
+                            <input class="form-check-input" type="checkbox" id="check-all-students">
+                        </th>
                         ${buildSortHeader('Alumno', 'name')}
                         ${buildSortHeader('Ciclo', 'cycle')}
                         ${buildSortHeader('Nivel', 'level')}
                         ${buildSortHeader('Empresa', 'companyId')}
                         ${buildSortHeader('Población', 'city')}
+                        ${buildSortHeader('Carnet', 'hasLicense')}
                         ${buildSortHeader('Coche', 'hasCar')}
                         ${buildSortHeader('Inglés', 'englishLevel')}
                         ${buildSortHeader('Tutor Docente', 'tutorName')}
@@ -911,14 +1001,19 @@ export class DualModule {
 
             return `
                         <tr class="${rowClass} clickable-row" data-id="${s.id}" style="cursor:pointer">
+                            <td onclick="event.stopPropagation()">
+                                <input class="form-check-input check-student" type="checkbox" value="${s.id}">
+                            </td>
                             <td>
                                 <div class="fw-bold">${s.name}</div>
                                 <div class="small text-muted">${s.course || ''}</div>
+                                ${s.email ? `<a href="mailto:${s.email}" class="small text-decoration-none" onclick="event.stopPropagation()"><i class="fas fa-envelope"></i> ${s.email}</a>` : ''}
                             </td>
                             <td><span class="badge bg-white text-dark border">${s.cycle || '-'}</span></td>
                             <td><span class="badge bg-white text-dark border">${s.level || '-'}</span></td>
                             <td>${companyHtml}</td>
                             <td>${s.city || '-'}</td>
+                            <td>${s.hasLicense ? '<i class="fas fa-id-card text-success" title="Sí"></i>' : '<span class="text-muted text-opacity-25"><i class="fas fa-id-card"></i></span>'}</td>
                             <td>${s.hasCar ? '<i class="fas fa-car text-success" title="Sí"></i>' : '<span class="text-muted text-opacity-25"><i class="fas fa-car"></i></span>'}</td>
                             <td>${s.englishLevel || '-'}</td>
                             <td><div class="small text-primary fw-bold">${s._tutorName}</div></td>
@@ -950,8 +1045,8 @@ export class DualModule {
         // Row Click Event
         container.querySelectorAll('.clickable-row').forEach(row => {
             row.addEventListener('click', (e) => {
-                // Ignore if clicked on a button or link
-                if (e.target.closest('button') || e.target.closest('a')) return;
+                // Ignore if clicked on a button, link, or checkbox
+                if (e.target.closest('button') || e.target.closest('a') || e.target.closest('input[type="checkbox"]')) return;
 
                 const student = this.students.find(s => s.id === row.dataset.id);
                 this.openStudentModal(student);
@@ -983,6 +1078,60 @@ export class DualModule {
             });
         });
 
+        // Mass Delete Logic
+        const checkAll = container.querySelector('#check-all-students');
+        const checkboxes = container.querySelectorAll('.check-student');
+        const btnDeleteSelected = container.querySelector('#btn-delete-selected-st');
+        const deleteCountSpan = container.querySelector('#delete-st-count');
+
+        const updateDeleteButton = () => {
+            const selected = container.querySelectorAll('.check-student:checked').length;
+            if (selected > 0) {
+                btnDeleteSelected.classList.remove('d-none');
+                deleteCountSpan.textContent = selected;
+            } else {
+                btnDeleteSelected.classList.add('d-none');
+            }
+        };
+
+        if (checkAll) {
+            checkAll.addEventListener('change', () => {
+                checkboxes.forEach(cb => cb.checked = checkAll.checked);
+                updateDeleteButton();
+            });
+        }
+
+        checkboxes.forEach(cb => {
+            cb.addEventListener('change', () => {
+                const allChecked = Array.from(checkboxes).every(c => c.checked);
+                if (checkAll) checkAll.checked = allChecked;
+                updateDeleteButton();
+            });
+        });
+
+        if (btnDeleteSelected) {
+            btnDeleteSelected.addEventListener('click', async () => {
+                const selectedIds = Array.from(container.querySelectorAll('.check-student:checked')).map(cb => cb.value);
+                if (selectedIds.length === 0) return;
+
+                if (await UIHelpers.confirm(`¿Estás seguro de que quieres eliminar a ${selectedIds.length} alumno(s)? Esta acción no se puede deshacer.`)) {
+                    btnDeleteSelected.disabled = true;
+                    btnDeleteSelected.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Borrando...';
+                    
+                    try {
+                        const deletePromises = selectedIds.map(id => this.firebaseService.deleteDualStudent(id, this.courseId));
+                        await Promise.all(deletePromises);
+                        UIHelpers.showToast(`${selectedIds.length} alumno(s) borrado(s) correctamente`, 'success');
+                        this.loadStudents();
+                    } catch (error) {
+                        console.error('Error deleting students:', error);
+                        UIHelpers.showToast('Error al borrar los alumnos', 'error');
+                        btnDeleteSelected.disabled = false;
+                        btnDeleteSelected.innerHTML = '<i class="fas fa-trash me-1"></i>Borrar seleccionados (<span id="delete-st-count">0</span>)';
+                    }
+                }
+            });
+        }
     }
 
     bindStudentFilters(container) {
@@ -1040,7 +1189,7 @@ export class DualModule {
         const modal = document.createElement('div');
         modal.className = 'modal fade';
         modal.innerHTML = `
-            <div class="modal-dialog">
+            <div class="modal-dialog modal-lg">
                 <div class="modal-content">
                     <div class="modal-header">
                         <h5 class="modal-title">${isEdit ? 'Editar Alumno' : 'Nuevo Alumno'}</h5>
@@ -1048,100 +1197,145 @@ export class DualModule {
                     </div>
                     <div class="modal-body">
                         <form id="student-form">
-                            <div class="mb-3">
-                                <label class="form-label">Nombre del Alumno *</label>
-                                <input type="text" class="form-control" id="st-name" required value="${student?.name || ''}">
-                            </div>
-                            <div class="row">
-                                <div class="col-md-4 mb-3">
-                                    <label class="form-label">Curso</label>
-                                    <input type="text" class="form-control" id="st-course" value="${student?.course || UIHelpers.getSchoolYearLabel()}" placeholder="2025-2026">
+                            <!-- Bloque 1: Datos del alumno -->
+                            <div class="card border-primary mb-3 shadow-sm">
+                                <div class="card-header bg-primary text-white fw-bold">
+                                    <i class="fas fa-user-graduate me-2"></i>1. Datos del alumno
                                 </div>
-                                <div class="col-md-4 mb-3">
-                                    <label class="form-label">Ciclo</label>
-                                    <select class="form-select" id="st-cycle">
-                                        <option value="">-</option>
-                                        ${this.config.cycles.map(c => `<option value="${c}" ${student?.cycle === c ? 'selected' : ''}>${c}</option>`).join('')}
-                                    </select>
+                                <div class="card-body pb-0">
+                                    <div class="row">
+                                        <div class="col-md-6 mb-3">
+                                            <label class="form-label">Nombre del Alumno *</label>
+                                            <input type="text" class="form-control border-primary border-opacity-25" id="st-name" required value="${student?.name || ''}">
+                                        </div>
+                                        <div class="col-md-6 mb-3">
+                                            <label class="form-label">Email</label>
+                                            <input type="email" class="form-control" id="st-email" value="${student?.email || ''}">
+                                        </div>
+                                    </div>
+                                    <div class="row">
+                                        <div class="col-md-4 mb-3">
+                                            <label class="form-label">Curso</label>
+                                            <input type="text" class="form-control" id="st-course" value="${student?.course || UIHelpers.getSchoolYearLabel()}" placeholder="2025-2026">
+                                        </div>
+                                        <div class="col-md-4 mb-3">
+                                            <label class="form-label">Ciclo</label>
+                                            <select class="form-select" id="st-cycle">
+                                                <option value="">-</option>
+                                                ${this.config.cycles.map(c => `<option value="${c}" ${student?.cycle === c ? 'selected' : ''}>${c}</option>`).join('')}
+                                            </select>
+                                        </div>
+                                        <div class="col-md-4 mb-3">
+                                            <label class="form-label">Nivel</label>
+                                            <select class="form-select" id="st-level">
+                                                <option value="">-</option>
+                                                ${this.config.levels.map(l => `<option value="${l}" ${student?.level === l ? 'selected' : ''}>${l}</option>`).join('')}
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="row">
+                                        <div class="col-md-4 mb-3">
+                                            <label class="form-label">Población / Residencia</label>
+                                            <input type="text" class="form-control" id="st-city" value="${student?.city || ''}" placeholder="Ej: Dos Hermanas">
+                                        </div>
+                                        <div class="col-md-2 mb-3">
+                                            <label class="form-label">¿Carnet?</label>
+                                            <select class="form-select" id="st-has-license">
+                                                <option value="false" ${!student?.hasLicense ? 'selected' : ''}>No</option>
+                                                <option value="true" ${student?.hasLicense ? 'selected' : ''}>Sí</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-2 mb-3">
+                                            <label class="form-label">¿Coche?</label>
+                                            <select class="form-select" id="st-has-car">
+                                                <option value="false" ${!student?.hasCar ? 'selected' : ''}>No</option>
+                                                <option value="true" ${student?.hasCar ? 'selected' : ''}>Sí</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-4 mb-3">
+                                            <label class="form-label">Nivel Inglés</label>
+                                            <input type="text" class="form-control" id="st-english" value="${student?.englishLevel || ''}" placeholder="Ej: B1, B2...">
+                                        </div>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Posible Empresa / Observaciones</label>
+                                        <input type="text" class="form-control" id="st-possible-company" value="${student?.possibleCompany || ''}" placeholder="Nombre de empresa tentativa o notas...">
+                                    </div>
                                 </div>
-                                <div class="col-md-4 mb-3">
-                                    <label class="form-label">Nivel</label>
-                                    <select class="form-select" id="st-level">
-                                        <option value="">-</option>
-                                        ${this.config.levels.map(l => `<option value="${l}" ${student?.level === l ? 'selected' : ''}>${l}</option>`).join('')}
-                                    </select>
-                                </div>
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label">Horario</label>
-                                <input type="text" class="form-control" id="st-schedule" value="${student?.schedule || ''}" placeholder="L-V 8:00-14:00">
                             </div>
 
-                            <div class="row">
-                                <div class="col-md-5 mb-3">
-                                    <label class="form-label">Población / Residencia</label>
-                                    <input type="text" class="form-control" id="st-city" value="${student?.city || ''}" placeholder="Ej: Dos Hermanas">
+                            <!-- Bloque 2: Asignación de la empresa -->
+                            <div class="card border-success mb-3 shadow-sm">
+                                <div class="card-header bg-success text-white fw-bold">
+                                    <i class="fas fa-building me-2"></i>2. Asignación a Empresa
                                 </div>
-                                <div class="col-md-3 mb-3">
-                                    <label class="form-label">¿Tiene Coche?</label>
-                                    <select class="form-select" id="st-has-car">
-                                        <option value="false" ${!student?.hasCar ? 'selected' : ''}>No</option>
-                                        <option value="true" ${student?.hasCar ? 'selected' : ''}>Sí</option>
-                                    </select>
+                                <div class="card-body pb-0">
+                                    <div class="row">
+                                        <div class="col-md-6 mb-3">
+                                            <label class="form-label d-flex justify-content-between align-items-end w-100">
+                                                <span>Empresa Asignada</span>
+                                                ${student?.companyId ? `<a href="#" class="small text-success bg-white px-2 py-1 rounded text-decoration-none shadow-sm" id="link-view-company"><i class="fas fa-external-link-alt me-1"></i>Ver ficha</a>` : ''}
+                                            </label>
+                                            <select class="form-select border-success border-opacity-50" id="st-company">
+                                                <option value="">-- Sin asignar --</option>
+                                                ${this.companies.map(c => `
+                                                    <option value="${c.id}" ${student?.companyId === c.id ? 'selected' : ''}>${c.name}</option>
+                                                `).join('')}
+                                            </select>
+                                        </div>
+                                        <div class="col-md-6 mb-3">
+                                            <label class="form-label">Tutor (Equipo Dual)</label>
+                                            <select class="form-select" id="st-tutor">
+                                                <option value="">-- Seleccionar --</option>
+                                                ${this.users.map(u => `
+                                                    <option value="${u.uid}" ${student?.tutorId === u.uid ? 'selected' : ''}>${u.displayName || u.email}</option>
+                                                `).join('')}
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Horario en la Empresa</label>
+                                        <input type="text" class="form-control" id="st-schedule" value="${student?.schedule || ''}" placeholder="L-V 8:00-14:00">
+                                    </div>
+                                    <div class="row">
+                                        <div class="col-md-6 mb-3">
+                                            <label class="form-label">Fecha Inicio</label>
+                                            <input type="date" class="form-control" id="st-start" value="${student?.startDate || ''}">
+                                        </div>
+                                        <div class="col-md-6 mb-3">
+                                            <label class="form-label">Fecha Fin</label>
+                                            <input type="date" class="form-control" id="st-end" value="${student?.endDate || ''}">
+                                        </div>
+                                    </div>
                                 </div>
-                                <div class="col-md-4 mb-3">
-                                    <label class="form-label">Nivel Inglés</label>
-                                    <input type="text" class="form-control" id="st-english" value="${student?.englishLevel || ''}" placeholder="Ej: B1, B2...">
+                            </div>
+
+                            <!-- Bloque 3: Seguimiento y Convenio -->
+                            <div class="card border-info mb-0 shadow-sm">
+                                <div class="card-header bg-info text-white fw-bold">
+                                    <i class="fas fa-file-signature me-2"></i>3. Seguimiento y Convenio
                                 </div>
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label">Empresa</label>
-                                <select class="form-select" id="st-company">
-                                    <option value="">-- Sin asignar --</option>
-                                    ${this.companies.map(c => `
-                                        <option value="${c.id}" ${student?.companyId === c.id ? 'selected' : ''}>${c.name}</option>
-                                    `).join('')}
-                                </select>
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label">Estado (Si no tiene empresa)</label>
-                                <select class="form-select" id="st-status">
-                                    <option value="pending" ${(!student?.status || student?.status === 'pending') ? 'selected' : ''}>Pendiente de asignar (Rojo)</option>
-                                    <option value="in_process" ${student?.status === 'in_process' ? 'selected' : ''}>En proceso / Entrevistas (Amarillo)</option>
-                                </select>
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label">Estado del Convenio</label>
-                                <select class="form-select" id="st-dual-status">
-                                    <option value="">- No iniciado -</option>
-                                    <option value="Convenio realizado" ${student?.dualStatus === 'Convenio realizado' ? 'selected' : ''}>Convenio realizado</option>
-                                    <option value="Convenio Firmado por el centro" ${student?.dualStatus === 'Convenio Firmado por el centro' ? 'selected' : ''}>Convenio Firmado por el centro</option>
-                                    <option value="Convenio Enviado a la empresa" ${student?.dualStatus === 'Convenio Enviado a la empresa' ? 'selected' : ''}>Convenio Enviado a la empresa</option>
-                                    <option value="Convenio Firmado en la empresa" ${student?.dualStatus === 'Convenio Firmado en la empresa' ? 'selected' : ''}>Convenio Firmado en la empresa</option>
-                                    <option value="Convenio Subido a Séneca" ${student?.dualStatus === 'Convenio Subido a Séneca' ? 'selected' : ''}>Convenio Subido a Séneca</option>
-                                </select>
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label">Posible Empresa / Observaciones</label>
-                                <input type="text" class="form-control" id="st-possible-company" value="${student?.possibleCompany || ''}" placeholder="Nombre de empresa tentativa o notas...">
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label">Tutor (Equipo Dual)</label>
-                                <select class="form-select" id="st-tutor">
-                                    <option value="">-- Seleccionar --</option>
-                                    ${this.users.map(u => `
-                                        <option value="${u.uid}" ${student?.tutorId === u.uid ? 'selected' : ''}>${u.displayName || u.email}</option>
-                                    `).join('')}
-                                </select>
-                            </div>
-                            <div class="row">
-                                <div class="col-md-6 mb-3">
-                                    <label class="form-label">Fecha Inicio</label>
-                                    <input type="date" class="form-control" id="st-start" value="${student?.startDate || ''}">
-                                </div>
-                                <div class="col-md-6 mb-3">
-                                    <label class="form-label">Fecha Fin</label>
-                                    <input type="date" class="form-control" id="st-end" value="${student?.endDate || ''}">
+                                <div class="card-body pb-0">
+                                    <div class="row">
+                                        <div class="col-md-6 mb-3">
+                                            <label class="form-label">Estado (Si no tiene empresa)</label>
+                                            <select class="form-select" id="st-status">
+                                                <option value="pending" ${(!student?.status || student?.status === 'pending') ? 'selected' : ''}>Pendiente de asignar (Rojo)</option>
+                                                <option value="in_process" ${student?.status === 'in_process' ? 'selected' : ''}>En proceso / Entrevistas (Amarillo)</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-6 mb-3">
+                                            <label class="form-label">Estado del Convenio</label>
+                                            <select class="form-select" id="st-dual-status">
+                                                <option value="">- No iniciado -</option>
+                                                <option value="Convenio realizado" ${student?.dualStatus === 'Convenio realizado' ? 'selected' : ''}>Convenio realizado</option>
+                                                <option value="Convenio Firmado por el centro" ${student?.dualStatus === 'Convenio Firmado por el centro' ? 'selected' : ''}>Convenio Firmado por el centro</option>
+                                                <option value="Convenio Enviado a la empresa" ${student?.dualStatus === 'Convenio Enviado a la empresa' ? 'selected' : ''}>Convenio Enviado a la empresa</option>
+                                                <option value="Convenio Firmado en la empresa" ${student?.dualStatus === 'Convenio Firmado en la empresa' ? 'selected' : ''}>Convenio Firmado en la empresa</option>
+                                                <option value="Convenio Subido a Séneca" ${student?.dualStatus === 'Convenio Subido a Séneca' ? 'selected' : ''}>Convenio Subido a Séneca</option>
+                                            </select>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </form>
@@ -1159,6 +1353,18 @@ export class DualModule {
         const bsModal = new bootstrap.Modal(modal);
         bsModal.show();
 
+        const linkCompany = document.getElementById('link-view-company');
+        if (linkCompany) {
+            linkCompany.addEventListener('click', (e) => {
+                e.preventDefault();
+                const companyId = document.getElementById('st-company').value;
+                const company = this.companies.find(c => c.id === companyId);
+                if (company) {
+                    this.openCompanyModal(company);
+                }
+            });
+        }
+
         document.getElementById('btn-save-st').addEventListener('click', async () => {
             const name = document.getElementById('st-name').value;
             if (!name) return alert('Nombre obligatorio');
@@ -1169,11 +1375,13 @@ export class DualModule {
 
             const data = {
                 name,
+                email: document.getElementById('st-email').value,
                 course: document.getElementById('st-course').value,
                 cycle: document.getElementById('st-cycle').value,
                 level: document.getElementById('st-level').value,
                 schedule: document.getElementById('st-schedule').value,
                 city: document.getElementById('st-city').value,
+                hasLicense: document.getElementById('st-has-license').value === 'true',
                 hasCar: document.getElementById('st-has-car').value === 'true',
                 englishLevel: document.getElementById('st-english').value,
                 companyId: document.getElementById('st-company').value,
@@ -1482,6 +1690,165 @@ export class DualModule {
         modal.hide();
         this.loadStudents();
     }
+
+    openCSVImportModal() {
+        const modal = document.createElement('div');
+        modal.className = 'modal fade';
+        modal.innerHTML = `
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title"><i class="fas fa-file-csv me-2"></i>Importar Datos desde CSV</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="alert alert-info">
+                            <h6 class="fw-bold"><i class="fas fa-info-circle me-2"></i>Formato del Archivo CSV</h6>
+                            <p class="mb-2">El archivo debe estar separado por comas (formato estándar al descargar como CSV desde Google Sheets). <strong>La primera fila debe contener las cabeceras</strong> (el texto exacto no importa, pero sí el orden).</p>
+                            <p class="mb-2">El orden de las columnas debe ser <strong>exactamente</strong> el siguiente:</p>
+                            <ol class="mb-0 small">
+                                <li><strong>Email</strong> (Obligatorio - usado para buscar al alumno)</li>
+                                <li><strong>Curso</strong> (Ej: 2024-2025)</li>
+                                <li><strong>Ciclo</strong> (Ej: DAW)</li>
+                                <li><strong>Nivel</strong> (1 o 2)</li>
+                                <li><strong>Población</strong></li>
+                                <li><strong>Carnet</strong> (Sí / No)</li>
+                                <li><strong>Coche</strong> (Sí / No)</li>
+                                <li><strong>Nivel Inglés</strong></li>
+                                <li><strong>Posible Empresa / Observaciones</strong></li>
+                            </ol>
+                            <div class="mt-2 text-muted small">Nota: Los campos vacíos en el CSV no sobreescribirán los datos existentes del alumno.</div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Selecciona el archivo CSV</label>
+                            <input class="form-control" type="file" id="csv-file-input" accept=".csv">
+                        </div>
+                        <div id="csv-import-results" class="mt-3"></div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                        <button type="button" class="btn btn-primary" id="btn-process-csv">Procesar CSV</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+        const bsModal = new bootstrap.Modal(modal);
+        bsModal.show();
+
+        document.getElementById('btn-process-csv').addEventListener('click', async () => {
+            const fileInput = document.getElementById('csv-file-input');
+            const file = fileInput.files[0];
+            if (!file) {
+                alert('Por favor, selecciona un archivo CSV.');
+                return;
+            }
+
+            const btn = document.getElementById('btn-process-csv');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Procesando...';
+            
+            const resultsDiv = document.getElementById('csv-import-results');
+            resultsDiv.innerHTML = '<div class="text-center"><div class="spinner-border text-primary"></div><div class="mt-2">Procesando archivo...</div></div>';
+
+            try {
+                const text = await file.text();
+                await this.processCSVData(text, resultsDiv);
+            } catch (e) {
+                console.error(e);
+                resultsDiv.innerHTML = `<div class="alert alert-danger">Error al leer el archivo: ${e.message}</div>`;
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = 'Procesar CSV';
+            }
+        });
+
+        modal.addEventListener('hidden.bs.modal', () => {
+            modal.remove();
+            this.loadStudents();
+        });
+    }
+
+    async processCSVData(csvText, resultsDiv) {
+        const parseCSVRow = (text) => {
+            const result = [];
+            let current = '';
+            let inQuotes = false;
+            for (let i = 0; i < text.length; i++) {
+                const char = text[i];
+                if (char === '"') {
+                    if (inQuotes && text[i+1] === '"') {
+                        current += '"';
+                        i++;
+                    } else {
+                        inQuotes = !inQuotes;
+                    }
+                } else if (char === ',' && !inQuotes) {
+                    result.push(current.trim());
+                    current = '';
+                } else {
+                    current += char;
+                }
+            }
+            result.push(current.trim());
+            return result;
+        };
+
+        const lines = csvText.split(/\r?\n/).filter(line => line.trim() !== '');
+        if (lines.length < 2) {
+            resultsDiv.innerHTML = '<div class="alert alert-warning">El archivo parece estar vacío o solo contiene cabeceras.</div>';
+            return;
+        }
+
+        let updated = 0;
+        let notFound = 0;
+        let errors = 0;
+        const notFoundEmails = [];
+
+        // skip header
+        for (let i = 1; i < lines.length; i++) {
+            const row = parseCSVRow(lines[i]);
+            if (row.length === 0 || !row[0]) continue;
+
+            const email = row[0].toLowerCase();
+            const student = this.students.find(s => s.email && s.email.toLowerCase() === email);
+
+            if (!student) {
+                notFound++;
+                notFoundEmails.push(email);
+                continue;
+            }
+
+            const updates = {};
+            if (row[1]) updates.course = row[1];
+            if (row[2]) updates.cycle = row[2];
+            if (row[3]) updates.level = row[3];
+            if (row[4]) updates.city = row[4];
+            if (row[5]) updates.hasLicense = (row[5].toLowerCase() === 'sí' || row[5].toLowerCase() === 'si' || row[5].toLowerCase() === 'true');
+            if (row[6]) updates.hasCar = (row[6].toLowerCase() === 'sí' || row[6].toLowerCase() === 'si' || row[6].toLowerCase() === 'true');
+            if (row[7]) updates.englishLevel = row[7];
+            if (row[8]) updates.possibleCompany = row[8];
+
+            if (Object.keys(updates).length > 0) {
+                try {
+                    await this.firebaseService.updateDualStudent(student.id, updates, this.courseId);
+                    updated++;
+                } catch (e) {
+                    console.error('Error actualizando', email, e);
+                    errors++;
+                }
+            }
+        }
+
+        let resultHtml = `<div class="alert alert-success mb-2"><strong>Proceso completado</strong><br>Alumnos actualizados: ${updated}</div>`;
+        if (notFound > 0) {
+            resultHtml += `<div class="alert alert-warning mb-2">No se encontraron ${notFound} emails en el sistema (asegúrate de importarlos de Classroom primero).<br><small class="text-muted">${notFoundEmails.slice(0,5).join(', ')}${notFound > 5 ? '...' : ''}</small></div>`;
+        }
+        if (errors > 0) {
+            resultHtml += `<div class="alert alert-danger mb-0">Hubo errores al actualizar ${errors} alumnos.</div>`;
+        }
+        resultsDiv.innerHTML = resultHtml;
+    }
     async openInteractionsModal(entity, type) {
         // entity: company or student object
         // type: 'company' or 'student'
@@ -1682,8 +2049,14 @@ export class DualModule {
         const container = document.getElementById('team-table-container');
 
         // Pre-calculate Totals for Targets
-        const totalHours1 = this.users.reduce((acc, u) => acc + (parseInt(u.dualHours1) || 0), 0);
-        const totalHours2 = this.users.reduce((acc, u) => acc + (parseInt(u.dualHours2) || 0), 0);
+        const totalHours1 = this.users.reduce((acc, u) => {
+            const userCourseData = u.courseData?.[this.courseId] || {};
+            return acc + (parseInt(userCourseData.dualHours1 ?? u.dualHours1) || 0);
+        }, 0);
+        const totalHours2 = this.users.reduce((acc, u) => {
+            const userCourseData = u.courseData?.[this.courseId] || {};
+            return acc + (parseInt(userCourseData.dualHours2 ?? u.dualHours2) || 0);
+        }, 0);
 
         const totalStudents1 = this.students.filter(s => s.level === '1' || s.level === '1º').length;
         const totalStudents2 = this.students.filter(s => s.level === '2' || s.level === '2º').length;
@@ -1695,8 +2068,9 @@ export class DualModule {
             const companies = this.companies.filter(c => c.prospectorId === u.uid).length;
 
             // Calculate Targets
-            const userHours1 = parseInt(u.dualHours1) || 0;
-            const userHours2 = parseInt(u.dualHours2) || 0;
+            const userCourseData = u.courseData?.[this.courseId] || {};
+            const userHours1 = parseInt(userCourseData.dualHours1 ?? u.dualHours1) || 0;
+            const userHours2 = parseInt(userCourseData.dualHours2 ?? u.dualHours2) || 0;
             const target1 = totalHours1 > 0 ? Math.round((userHours1 / totalHours1) * totalStudents1) : 0;
             const target2 = totalHours2 > 0 ? Math.round((userHours2 / totalHours2) * totalStudents2) : 0;
 
@@ -1890,8 +2264,9 @@ export class DualModule {
                 </thead>
                 <tbody>
                     ${this.users.map(u => {
-            const h1 = parseInt(u.dualHours1) || 0;
-            const h2 = parseInt(u.dualHours2) || 0;
+            const userCourseData = u.courseData?.[this.courseId] || {};
+            const h1 = parseInt(userCourseData.dualHours1 ?? u.dualHours1) || 0;
+            const h2 = parseInt(userCourseData.dualHours2 ?? u.dualHours2) || 0;
             return `
                         <tr>
                             <td>${u.displayName || u.email}</td>
@@ -1925,14 +2300,21 @@ export class DualModule {
 
     async openTeamMemberModal(user) {
         // Calculate Totals for Targets
-        const totalHours1 = this.users.reduce((acc, u) => acc + (parseInt(u.dualHours1) || 0), 0);
-        const totalHours2 = this.users.reduce((acc, u) => acc + (parseInt(u.dualHours2) || 0), 0);
+        const totalHours1 = this.users.reduce((acc, u) => {
+            const userCourseData = u.courseData?.[this.courseId] || {};
+            return acc + (parseInt(userCourseData.dualHours1 ?? u.dualHours1) || 0);
+        }, 0);
+        const totalHours2 = this.users.reduce((acc, u) => {
+            const userCourseData = u.courseData?.[this.courseId] || {};
+            return acc + (parseInt(userCourseData.dualHours2 ?? u.dualHours2) || 0);
+        }, 0);
 
         const totalStudents1 = this.students.filter(s => s.level === '1' || s.level === '1º').length;
         const totalStudents2 = this.students.filter(s => s.level === '2' || s.level === '2º').length;
 
-        const userHours1 = parseInt(user.dualHours1) || 0;
-        const userHours2 = parseInt(user.dualHours2) || 0;
+        const userCourseData = user.courseData?.[this.courseId] || {};
+        const userHours1 = parseInt(userCourseData.dualHours1 ?? user.dualHours1) || 0;
+        const userHours2 = parseInt(userCourseData.dualHours2 ?? user.dualHours2) || 0;
 
         const target1 = totalHours1 > 0 ? Math.round((userHours1 / totalHours1) * totalStudents1) : 0;
         const target2 = totalHours2 > 0 ? Math.round((userHours2 / totalHours2) * totalStudents2) : 0;
@@ -2005,20 +2387,30 @@ export class DualModule {
             const h2 = parseInt(document.getElementById('hours-2').value) || 0;
 
             try {
-                await this.firebaseService.updateUser(user.uid, {
+                const newCourseData = { ...(user.courseData || {}) };
+                newCourseData[this.courseId] = {
+                    ...(newCourseData[this.courseId] || {}),
                     dualHours1: h1,
                     dualHours2: h2
+                };
+
+                await this.firebaseService.updateUser(user.uid, {
+                    courseData: newCourseData
                 });
 
                 // Update local state and UI
-                user.dualHours1 = h1;
-                user.dualHours2 = h2;
+                const realUser = this.users.find(u => u.uid === user.uid);
+                if (realUser) {
+                    if (!realUser.courseData) realUser.courseData = {};
+                    if (!realUser.courseData[this.courseId]) realUser.courseData[this.courseId] = {};
+                    realUser.courseData[this.courseId].dualHours1 = h1;
+                    realUser.courseData[this.courseId].dualHours2 = h2;
+                }
 
-                // Refresh main table and close modal or refresh modal stats? 
-                // For simplicity, close and refresh main table
+                // Refresh main table and close modal
                 bsModal.hide();
                 UIHelpers.showToast('Horas actualizadas correctmente', 'success');
-                this.loadDualTeam(); // Reload to recalc targets if needed (though targets are dynamic)
+                this.loadDualTeam(); // Reload to recalc targets
             } catch (e) {
                 console.error(e);
                 alert('Error al guardar horas');

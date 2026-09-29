@@ -1071,7 +1071,7 @@ export class FirebaseService {
             const credential = GoogleAuthProvider.credentialFromResult(result);
             const token = credential.accessToken;
 
-            const response = await fetch('https://classroom.googleapis.com/v1/courses?courseStates=ACTIVE', {
+            const response = await fetch('https://classroom.googleapis.com/v1/courses?courseStates=ACTIVE&teacherId=me', {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
 
