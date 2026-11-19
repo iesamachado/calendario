@@ -136,6 +136,7 @@ export class TicketsMaintenanceModule {
                                             <div class="mb-2">
                                                 <small class="text-muted d-block">Solicitante</small>
                                                 <strong>${ticket.requestedByName}</strong>
+                                                ${ticket.createdBy && ticket.createdBy !== ticket.requestedBy ? `<span class="badge bg-light text-secondary border ms-1"><i class="fas fa-user-edit me-1"></i>Registrado por ${ticket.createdByName}</span>` : ''}
                                                 <div class="small text-muted">${(this.deptMap && this.deptMap[ticket.requestedByDepartment]) || ticket.requestedByDepartment}</div>
                                             </div>
 
@@ -150,6 +151,7 @@ export class TicketsMaintenanceModule {
                                                     <select class="form-select form-select-sm" id="ticket-status">
                                                         <option value="abierto" ${ticket.status === 'abierto' ? 'selected' : ''}>Abierto</option>
                                                         <option value="en_progreso" ${ticket.status === 'en_progreso' ? 'selected' : ''}>En Progreso</option>
+                                                        <option value="en_espera" ${ticket.status === 'en_espera' ? 'selected' : ''}>En Espera</option>
                                                         <option value="resuelto" ${ticket.status === 'resuelto' ? 'selected' : ''}>Resuelto</option>
                                                         <option value="cerrado" ${ticket.status === 'cerrado' ? 'selected' : ''}>Cerrado</option>
                                                     </select>
@@ -470,11 +472,12 @@ export class TicketsMaintenanceModule {
             const validationTickets = tickets.filter(t => t.status === 'pendiente_validacion');
             const openTickets = tickets.filter(t => t.status === 'abierto');
             const inProgressTickets = tickets.filter(t => t.status === 'en_progreso');
+            const waitingTickets = tickets.filter(t => t.status === 'en_espera');
             const completedTickets = tickets.filter(t => t.status === 'resuelto' || t.status === 'cerrado' || t.status === 'rechazado');
 
             container.innerHTML = `
                 <div class="row g-3">
-                    <div class="col-md-3">
+                    <div class="col-xl col-md-6">
                         <div class="card h-100 border-0 bg-light">
                             <div class="card-header bg-primary text-white fw-bold d-flex justify-content-between align-items-center">
                                 <span><i class="fas fa-search me-2"></i>Por Validar</span>
@@ -486,7 +489,7 @@ export class TicketsMaintenanceModule {
                         </div>
                     </div>
 
-                    <div class="col-md-3">
+                    <div class="col-xl col-md-6">
                         <div class="card h-100 border-0 bg-light">
                             <div class="card-header bg-danger text-white fw-bold d-flex justify-content-between align-items-center">
                                 <span><i class="fas fa-exclamation-circle me-2"></i>Abiertas</span>
@@ -498,7 +501,7 @@ export class TicketsMaintenanceModule {
                         </div>
                     </div>
                     
-                    <div class="col-md-3">
+                    <div class="col-xl col-md-6">
                         <div class="card h-100 border-0 bg-light">
                             <div class="card-header bg-warning text-dark fw-bold d-flex justify-content-between align-items-center">
                                 <span><i class="fas fa-spinner me-2"></i>En Progreso</span>
@@ -510,7 +513,19 @@ export class TicketsMaintenanceModule {
                         </div>
                     </div>
 
-                    <div class="col-md-3">
+                    <div class="col-xl col-md-6">
+                        <div class="card h-100 border-0 bg-light">
+                            <div class="card-header bg-info text-dark fw-bold d-flex justify-content-between align-items-center">
+                                <span><i class="fas fa-pause-circle me-2"></i>En Espera</span>
+                                <span class="badge bg-white text-dark rounded-pill">${waitingTickets.length}</span>
+                            </div>
+                            <div class="card-body p-2" style="max-height: 70vh; overflow-y: auto;">
+                                ${this.renderTicketsList(waitingTickets)}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-xl col-md-6">
                         <div class="card h-100 border-0 bg-light">
                             <div class="card-header bg-success text-white fw-bold d-flex justify-content-between align-items-center">
                                 <span><i class="fas fa-check-circle me-2"></i>Finalizadas</span>
@@ -557,6 +572,7 @@ export class TicketsMaintenanceModule {
                                     <i class="fas fa-map-marker-alt me-1"></i>${ticket.location || 'Sin ubicación'} 
                                     <span class="mx-2">•</span>
                                     <i class="fas fa-user me-1"></i>${ticket.requestedByName}
+                                    ${ticket.createdBy && ticket.createdBy !== ticket.requestedBy ? `<span class="badge bg-light text-secondary border ms-1" title="Registrado por ${ticket.createdByName}"><i class="fas fa-user-edit me-1"></i>Por: ${ticket.createdByName}</span>` : ''}
                                     <span class="mx-2">•</span>
                                     <i class="fas fa-building me-1"></i>${(this.deptMap && this.deptMap[ticket.requestedByDepartment]) || ticket.requestedByDepartment || 'Sin departamento'}
                                     <span class="mx-2">•</span>
@@ -687,7 +703,7 @@ export class TicketsMaintenanceModule {
                     // but we can enforce it or assume service handles it. Service handles it.
                     // IMPORTANT: 'department' field is used for filtering.
                     department: targetUserDept || 'Sin departamento'
-                }, targetUserId, targetUserName, targetUserDept || 'Sin departamento', this.courseId);
+                }, targetUserId, targetUserName, targetUserDept || 'Sin departamento', this.courseId, this.user.uid, this.user.displayName || this.user.email.split('@')[0]);
 
                 UIHelpers.showToast(`Petición ${result.ticketNumber} creada correctamente`, 'success');
                 bsModal.hide();

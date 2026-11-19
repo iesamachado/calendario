@@ -62,6 +62,19 @@ export class HelpModule {
                 access: 'carts'
             },
             {
+                id: 'reserva-informatica',
+                title: 'Reserva Aula de Informática',
+                icon: 'fas fa-desktop',
+                desc: 'Reserva de puestos de ordenador por horas o para todo el curso escolar.',
+                steps: [
+                    '<b>Seleccionar Fecha:</b> Pulsa sobre un día lectivo en el calendario mensual.',
+                    '<b>Ver Disponibilidad:</b> Consulta el horario de mañana y tarde con las franjas libres y ocupadas.',
+                    '<b>Puntual o Todo el Curso:</b> Puedes reservar solo para ese día o de forma recurrente semanal hasta fin de curso (30 de junio).',
+                    '<b>Prioridad Dpto. Informática:</b> Permite marcar y bloquear horas prioritarias del departamento de informática.'
+                ],
+                access: 'it_room'
+            },
+            {
                 id: 'tickets-tic',
                 title: 'Peticiones TIC (Incidencias)',
                 icon: 'fas fa-laptop',

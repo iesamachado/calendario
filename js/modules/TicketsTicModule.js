@@ -1,14 +1,16 @@
 import { UIHelpers } from '../UIHelpers.js';
+import { EmailNotificationService } from '../EmailNotificationService.js';
 
 export class TicketsTicModule {
-    constructor(container, firebaseService, user, userRoles, isAdmin, courseId) {
+    constructor(container, firebaseService, user, userRoles, isAdmin, courseId, emailNotificationService = null) {
         this.courseId = courseId;
         this.container = container;
         this.firebaseService = firebaseService;
         this.user = user;
         this.userRoles = userRoles;
         this.isAdmin = isAdmin;
-        this.canManage = userRoles.includes('equipo_tic');
+        this.canManage = userRoles.includes('equipo_tic') || this.isAdmin;
+        this.emailNotificationService = emailNotificationService || new EmailNotificationService(this.firebaseService);
 
         this.currentView = 'list'; // 'list' or 'reports'
         this.filterMyTickets = false;
@@ -25,6 +27,12 @@ export class TicketsTicModule {
 
             const isTicTeam = this.canManage;
             const users = await this.firebaseService.getAllUsers();
+
+            if (!this.deptMap) {
+                const departments = await this.firebaseService.getAllDepartments();
+                this.deptMap = {};
+                departments.forEach(d => this.deptMap[d.id] = d.name);
+            }
 
             // Filter users for assignment (only equipo_tic)
             const ticUsers = users.filter(u => u.roles && u.roles.includes('equipo_tic'));
@@ -151,9 +159,23 @@ ${isTicTeam || ticket.status !== 'cerrado' ? `
                                             <h6 class="card-title fw-bold mb-3">Detalles</h6>
                                             
                                             <div class="mb-2">
-                                                <small class="text-muted d-block">Solicitante</small>
-                                                <strong>${ticket.requestedByName}</strong>
-                                                <div class="small text-muted">${ticket.requestedByDepartment}</div>
+                                                <small class="text-muted d-block fw-bold">Solicitante</small>
+                                                ${isTicTeam ? `
+                                                    <select class="form-select form-select-sm" id="ticket-requested-by">
+                                                        ${users.map(u => {
+                                                            const dName = (this.deptMap && this.deptMap[u.department]) || u.department || 'Sin Dept';
+                                                            return `<option value="${u.uid}" data-name="${u.displayName || u.email.split('@')[0]}" data-dept="${u.department || ''}" ${u.uid === ticket.requestedBy ? 'selected' : ''}>${u.displayName || u.email} (${dName})</option>`;
+                                                        }).join('')}
+                                                    </select>
+                                                    <div id="ticket-requester-dept-label" class="small text-muted mt-1">
+                                                        <i class="fas fa-building me-1"></i>${(this.deptMap && this.deptMap[ticket.requestedByDepartment]) || ticket.requestedByDepartment || 'Sin departamento'}
+                                                    </div>
+                                                    ${ticket.createdBy && ticket.createdBy !== ticket.requestedBy ? `<div class="small text-muted mt-1"><i class="fas fa-user-edit me-1"></i>Registrado por ${ticket.createdByName}</div>` : ''}
+                                                ` : `
+                                                    <strong>${ticket.requestedByName}</strong>
+                                                    ${ticket.createdBy && ticket.createdBy !== ticket.requestedBy ? `<span class="badge bg-light text-secondary border ms-1"><i class="fas fa-user-edit me-1"></i>Registrado por ${ticket.createdByName}</span>` : ''}
+                                                    <div class="small text-muted">${(this.deptMap && this.deptMap[ticket.requestedByDepartment]) || ticket.requestedByDepartment}</div>
+                                                `}
                                             </div>
 
                                             <div class="mb-2">
@@ -167,6 +189,7 @@ ${isTicTeam || ticket.status !== 'cerrado' ? `
                                                     <select class="form-select form-select-sm" id="ticket-status">
                                                         <option value="abierto" ${ticket.status === 'abierto' ? 'selected' : ''}>Abierto</option>
                                                         <option value="en_progreso" ${ticket.status === 'en_progreso' ? 'selected' : ''}>En Progreso</option>
+                                                        <option value="en_espera" ${ticket.status === 'en_espera' ? 'selected' : ''}>En Espera</option>
                                                         <option value="resuelto" ${ticket.status === 'resuelto' ? 'selected' : ''}>Resuelto</option>
                                                         <option value="cerrado" ${ticket.status === 'cerrado' ? 'selected' : ''}>Cerrado</option>
                                                     </select>
@@ -244,6 +267,17 @@ ${isTicTeam || ticket.status !== 'cerrado' ? `
                 });
             }
 
+            const reqSelect = modal.querySelector('#ticket-requested-by');
+            if (reqSelect) {
+                reqSelect.addEventListener('change', () => {
+                    const opt = reqSelect.options[reqSelect.selectedIndex];
+                    const deptId = opt.dataset.dept;
+                    const dName = (this.deptMap && this.deptMap[deptId]) || deptId || 'Sin departamento';
+                    const label = modal.querySelector('#ticket-requester-dept-label');
+                    if (label) label.innerHTML = `<i class="fas fa-building me-1"></i>${dName}`;
+                });
+            }
+
             const btnUpdate = document.getElementById('btn-update-ticket');
             if (btnUpdate) {
                 btnUpdate.addEventListener('click', async () => {
@@ -253,6 +287,23 @@ ${isTicTeam || ticket.status !== 'cerrado' ? `
                             updatedAt: new Date(),
                             updatedBy: this.user.uid
                         };
+
+                        if (reqSelect && reqSelect.value !== ticket.requestedBy) {
+                            const selectedOpt = reqSelect.options[reqSelect.selectedIndex];
+                            const newUid = reqSelect.value;
+                            const newName = selectedOpt.dataset.name;
+                            const newDept = selectedOpt.dataset.dept || '';
+                            updates.requestedBy = newUid;
+                            updates.requestedByName = newName;
+                            updates.requestedByDepartment = newDept;
+                            newHistoryEntries.push({
+                                timestamp: new Date(),
+                                type: 'assignment',
+                                userId: this.user.uid,
+                                userName: this.user.displayName || this.user.email,
+                                content: `Solicitante cambiado de "${ticket.requestedByName || 'Usuario'}" a "${newName}"`
+                            });
+                        }
 
                         // Check for new observation
                         const newObservation = document.getElementById('ticket-new-observation') ? document.getElementById('ticket-new-observation').value.trim() : null;
@@ -308,6 +359,22 @@ ${isTicTeam || ticket.status !== 'cerrado' ? `
                             }
 
                             await this.firebaseService.updateTicket('tic', ticketId, updates, this.courseId);
+
+                            // Send status change email notification if status changed to en_espera, resuelto or cerrado
+                            if (updates.status && ['en_espera', 'resuelto', 'cerrado'].includes(updates.status)) {
+                                const newObs = document.getElementById('ticket-observation')?.value.trim() || '';
+                                const tech = this.user.displayName || this.user.email.split('@')[0];
+                                const updatedTicket = { ...ticket, ...updates };
+                                this.firebaseService.getTicketRequesterEmail(ticket)
+                                    .then(email => {
+                                        if (email) {
+                                            this.emailNotificationService.sendStatusChangeNotification(
+                                                updatedTicket, 'tic', updates.status, ticket.status, newObs, tech, email
+                                            );
+                                        }
+                                    })
+                                    .catch(err => console.error('Error sending TIC status change email:', err));
+                            }
 
                             UIHelpers.showToast('Petición actualizada', 'success');
                             bsModal.hide();
@@ -369,6 +436,11 @@ ${isTicTeam || ticket.status !== 'cerrado' ? `
                     <p class="text-muted mb-0">Sistema de peticiones tecnológicas</p>
                 </div>
                 <div>
+                    ${this.userRoles.includes('equipo_tic') ? `
+                        <button id="btn-toggle-tic-notif" class="btn btn-sm btn-outline-secondary me-2" title="Activar/Desactivar avisos por email al recibir nuevas peticiones TIC">
+                            <i class="fas fa-bell me-1"></i>Avisos Email: <span id="tic-notif-status">...</span>
+                        </button>
+                    ` : ''}
                     ${this.canManage ? `
                         <button id="btn-view-reports" class="btn btn-outline-primary me-2">
                             <i class="fas fa-chart-bar me-1"></i>Reportes
@@ -402,6 +474,14 @@ ${isTicTeam || ticket.status !== 'cerrado' ? `
 
         document.getElementById('btn-new-ticket').addEventListener('click', () => this.showCreateTicketModal());
 
+        if (this.userRoles.includes('equipo_tic')) {
+            this.updateTicNotifButton();
+            const btnNotif = document.getElementById('btn-toggle-tic-notif');
+            if (btnNotif) {
+                btnNotif.addEventListener('click', () => this.toggleTicNotificationPreference());
+            }
+        }
+
         if (this.canManage) {
             document.getElementById('btn-view-reports').addEventListener('click', () => this.toggleView());
             const myTix = document.getElementById('filter-my-tickets');
@@ -413,6 +493,35 @@ ${isTicTeam || ticket.status !== 'cerrado' ? `
         }
 
         await this.loadTicketsList();
+    }
+
+    async updateTicNotifButton() {
+        const btn = document.getElementById('btn-toggle-tic-notif');
+        const statusSpan = document.getElementById('tic-notif-status');
+        if (!btn || !statusSpan) return;
+
+        try {
+            const prefs = await this.firebaseService.getUserNotificationPreferences(this.user.uid);
+            const isEnabled = prefs.emailTicNew !== false;
+            btn.className = `btn btn-sm me-2 ${isEnabled ? 'btn-outline-success' : 'btn-outline-secondary'}`;
+            btn.innerHTML = `<i class="fas ${isEnabled ? 'fa-bell' : 'fa-bell-slash'} me-1"></i>Avisos Email: <span id="tic-notif-status">${isEnabled ? 'Activados' : 'Desactivados'}</span>`;
+        } catch (e) {
+            console.error('Error updating TIC notif button:', e);
+        }
+    }
+
+    async toggleTicNotificationPreference() {
+        try {
+            const prefs = await this.firebaseService.getUserNotificationPreferences(this.user.uid);
+            const newState = !(prefs.emailTicNew !== false);
+            prefs.emailTicNew = newState;
+            await this.firebaseService.updateUserNotificationPreferences(this.user.uid, prefs);
+            await this.updateTicNotifButton();
+            UIHelpers.showToast(`Avisos por email de nuevas peticiones TIC ${newState ? 'activados' : 'desactivados'}`, 'info');
+        } catch (e) {
+            console.error('Error toggling TIC notification preference:', e);
+            UIHelpers.showToast('Error al actualizar preferencias de notificación', 'error');
+        }
     }
 
     toggleView() {
@@ -470,9 +579,10 @@ ${isTicTeam || ticket.status !== 'cerrado' ? `
             
             const openTickets = displayTickets.filter(t => t.status === 'abierto');
             const inProgressTickets = displayTickets.filter(t => t.status === 'en_progreso');
+            const waitingTickets = displayTickets.filter(t => t.status === 'en_espera');
             const resolvedTickets = displayTickets.filter(t => t.status === 'resuelto' || t.status === 'cerrado');
             
-            const colClass = (this.canManage && this.filterHideClosed) ? 'col-md-6' : 'col-md-4';
+            const colClass = (this.canManage && this.filterHideClosed) ? 'col-md-4' : 'col-md-3';
 
             container.innerHTML = `
                 <div class="row g-3">
@@ -496,6 +606,18 @@ ${isTicTeam || ticket.status !== 'cerrado' ? `
                             </div>
                             <div class="card-body p-2" style="max-height: 70vh; overflow-y: auto;">
                                 ${this.renderTicketsList(inProgressTickets)}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="${colClass}">
+                        <div class="card h-100 border-0 bg-light">
+                            <div class="card-header bg-info text-dark fw-bold d-flex justify-content-between align-items-center">
+                                <span><i class="fas fa-pause-circle me-2"></i>En Espera</span>
+                                <span class="badge bg-white text-dark rounded-pill">${waitingTickets.length}</span>
+                            </div>
+                            <div class="card-body p-2" style="max-height: 70vh; overflow-y: auto;">
+                                ${this.renderTicketsList(waitingTickets)}
                             </div>
                         </div>
                     </div>
@@ -548,6 +670,7 @@ ${isTicTeam || ticket.status !== 'cerrado' ? `
                                 <p class="mb-1 text-muted small">${ticket.description}</p>
                                 <div class="small text-muted">
                                     <i class="fas fa-user me-1"></i>${ticket.requestedByName} 
+                                    ${ticket.createdBy && ticket.createdBy !== ticket.requestedBy ? `<span class="badge bg-light text-secondary border ms-1" title="Registrado por ${ticket.createdByName}"><i class="fas fa-user-edit me-1"></i>Por: ${ticket.createdByName}</span>` : ''}
                                     <span class="mx-2">•</span>
                                     <i class="fas fa-building me-1"></i>${(this.deptMap && this.deptMap[ticket.requestedByDepartment]) || ticket.requestedByDepartment}
                                     <span class="mx-2">•</span>
@@ -578,7 +701,12 @@ ${isTicTeam || ticket.status !== 'cerrado' ? `
         `;
     }
 
-    showCreateTicketModal() {
+    async showCreateTicketModal() {
+        const users = this.canManage ? await this.firebaseService.getAllUsers() : [];
+        if (this.canManage) {
+            users.sort((a, b) => (a.displayName || a.email || '').localeCompare(b.displayName || b.email || ''));
+        }
+
         const modal = document.createElement('div');
         modal.className = 'modal fade';
         modal.innerHTML = `
@@ -590,6 +718,17 @@ ${isTicTeam || ticket.status !== 'cerrado' ? `
                     </div>
                     <div class="modal-body">
                         <form id="form-ticket-tic">
+                            ${this.canManage ? `
+                                <div class="mb-3">
+                                    <label class="form-label bg-warning-subtle px-2 py-1 rounded fw-bold">
+                                        <i class="fas fa-user-edit me-1"></i>Solicitante (Modo Equipo TIC)
+                                    </label>
+                                    <select class="form-select" id="ticket-tic-requester">
+                                        ${users.map(u => `<option value="${u.uid}" ${u.uid === this.user.uid ? 'selected' : ''}>${u.displayName || u.email} (${(this.deptMap && this.deptMap[u.department]) || u.department || 'Sin Dept'})</option>`).join('')}
+                                    </select>
+                                    <div class="form-text">Como miembro del equipo TIC, puedes registrar una incidencia en nombre de otro usuario.</div>
+                                </div>
+                            ` : ''}
                             <div class="mb-3">
                                 <label class="form-label">Título *</label>
                                 <input type="text" class="form-control" id="ticket-title" required>
@@ -620,8 +759,7 @@ ${isTicTeam || ticket.status !== 'cerrado' ? `
         const bsModal = new bootstrap.Modal(modal);
         bsModal.show();
 
-        
-            document.getElementById('btn-save-ticket').addEventListener('click', async () => {
+        document.getElementById('btn-save-ticket').addEventListener('click', async () => {
             const title = document.getElementById('ticket-title').value;
             const description = document.getElementById('ticket-description').value;
             const priority = document.getElementById('ticket-priority').value;
@@ -632,17 +770,55 @@ ${isTicTeam || ticket.status !== 'cerrado' ? `
             }
 
             try {
-                // Get user department
-                const users = await this.firebaseService.getAllUsers();
-                const userData = users.find(u => u.uid === this.user.uid);
-                const userDepartment = userData?.department || 'Sin departamento';
+                let targetUserId = this.user.uid;
+                let targetUserName = this.user.displayName || this.user.email.split('@')[0];
+                let targetUserDept = null;
+                let targetUserEmail = this.user.email;
+
+                if (this.canManage) {
+                    const requesterSelect = document.getElementById('ticket-tic-requester');
+                    if (requesterSelect) {
+                        const selectedUid = requesterSelect.value;
+                        const selectedUser = users.find(u => u.uid === selectedUid);
+                        if (selectedUser) {
+                            targetUserId = selectedUser.uid;
+                            targetUserName = selectedUser.displayName || selectedUser.email.split('@')[0];
+                            targetUserDept = selectedUser.department;
+                            targetUserEmail = selectedUser.email;
+                        }
+                    }
+                }
+
+                if (!targetUserDept) {
+                    const allUsers = users.length > 0 ? users : await this.firebaseService.getAllUsers();
+                    const userData = allUsers.find(u => u.uid === targetUserId);
+                    targetUserDept = userData?.department || 'Sin departamento';
+                    if (!targetUserEmail && userData?.email) targetUserEmail = userData.email;
+                }
 
                 const result = await this.firebaseService.createTicket('tic', {
                     title,
                     description,
                     priority,
-                    department: userDepartment
-                }, this.user.uid, this.user.displayName || this.user.email.split('@')[0], userDepartment, this.courseId);
+                    department: targetUserDept
+                }, targetUserId, targetUserName, targetUserDept, this.courseId, this.user.uid, this.user.displayName || this.user.email.split('@')[0], targetUserEmail, this.user.email);
+
+                // Asynchronously send email notification to TIC team subscribers
+                this.firebaseService.getTeamNotificationEmails('equipo_tic', 'emailTicNew')
+                    .then(teamEmails => {
+                        if (teamEmails && teamEmails.length > 0) {
+                            this.emailNotificationService.sendNewTicketNotification({
+                                ticketNumber: result.ticketNumber,
+                                title,
+                                description,
+                                priority,
+                                requestedByName: targetUserName,
+                                requestedByDepartment: targetUserDept,
+                                createdByName: this.user.displayName || this.user.email.split('@')[0]
+                            }, 'tic', teamEmails);
+                        }
+                    })
+                    .catch(err => console.error('Error sending new TIC ticket notification:', err));
 
                 UIHelpers.showToast(`Incidencia ${result.ticketNumber} creada correctamente`, 'success');
                 bsModal.hide();

@@ -124,6 +124,7 @@ export class UIHelpers {
             'pendiente_validacion': '<span class="badge bg-warning text-dark">Pendiente Validación</span>',
             'rechazado': '<span class="badge bg-secondary">Rechazado</span>',
             'en_progreso': '<span class="badge bg-warning text-dark">En Progreso</span>',
+            'en_espera': '<span class="badge bg-info text-dark">En Espera</span>',
             'resuelto': '<span class="badge bg-success">Resuelto</span>',
             'cerrado': '<span class="badge bg-secondary">Cerrado</span>'
         };
@@ -148,6 +149,13 @@ export class UIHelpers {
             style: 'currency',
             currency: 'EUR'
         }).format(amount);
+    }
+
+    // Calculate 3D print cost (piggy bank contribution) according to filament weight brackets (0.50 € per 20g)
+    static calculate3DCost(grams) {
+        const weight = parseFloat(grams) || 0;
+        if (weight <= 0) return 0;
+        return Math.ceil(weight / 20) * 0.5;
     }
 
     // Get role display name

@@ -1,4 +1,5 @@
 import { UIHelpers } from '../UIHelpers.js';
+import { EmailNotificationService } from '../EmailNotificationService.js';
 
 export class AdminModule {
     constructor(container, firebaseService, user, coursesList = [], currentCourse = null) {
@@ -7,6 +8,7 @@ export class AdminModule {
         this.user = user;
         this.coursesList = coursesList;
         this.currentCourse = currentCourse;
+        this.emailNotificationService = new EmailNotificationService(this.firebaseService);
 
         this.auditPagination = {
             pageSize: 20,
@@ -19,6 +21,7 @@ export class AdminModule {
             direction: 'asc'
         };
 
+        this.userSearchTerm = '';
         this.users = [];
         this.departments = [];
 
@@ -191,6 +194,11 @@ export class AdminModule {
                         <i class="fas fa-toggle-on me-2"></i>Módulos
                     </button>
                 </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="email-tab" data-bs-toggle="tab" data-bs-target="#email-content" type="button" role="tab" aria-controls="email-content" aria-selected="false">
+                        <i class="fas fa-envelope me-2"></i>Notificaciones Email
+                    </button>
+                </li>
             </ul>
 
             <div class="tab-content" id="adminTabsContent">
@@ -248,6 +256,18 @@ export class AdminModule {
                         </div>
                     </div>
                 </div>
+
+                <!-- Email Notifications Tab -->
+                <div class="tab-pane fade" id="email-content" role="tabpanel" aria-labelledby="email-tab">
+                    <div class="card shadow-sm">
+                        <div class="card-body">
+                            <h5 class="card-title fw-bold mb-3"><i class="fas fa-envelope-open-text me-2"></i>Notificaciones por Email (Google Apps Script Webhook)</h5>
+                            <div id="email-config-container">
+                                <div class="spinner-border text-primary" role="status"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         `;
 
@@ -255,6 +275,7 @@ export class AdminModule {
         this.loadAuditLogs();
         this.loadModuleConfig();
         this.loadCoursesTab();
+        this.loadEmailConfig();
 
         const refreshBtn = document.getElementById('btn-refresh-audit');
         if (refreshBtn) refreshBtn.addEventListener('click', () => this.loadAuditLogs());
@@ -406,7 +427,8 @@ export class AdminModule {
                 { id: 'tickets_3d', label: 'Peticiones 3D' },
                 { id: 'dual', label: 'Gestión Dual' },
                 { id: 'sum', label: 'Reserva Salón de Actos / SUM' },
-                { id: 'carts', label: 'Reserva Carros Portátiles' }
+                { id: 'carts', label: 'Reserva Carros Portátiles' },
+                { id: 'it_room', label: 'Reserva Aula de Informática' }
                 // departments is hidden from here as it's admin internal
             ];
 
@@ -455,12 +477,222 @@ export class AdminModule {
         }
     }
 
+    async loadEmailConfig() {
+        const container = document.getElementById('email-config-container');
+        if (!container) return;
+
+        try {
+            const config = await this.firebaseService.getEmailConfig();
+            const webhookUrl = config.webhookUrl || '';
+            const isEnabled = config.enabled !== false;
+
+            container.innerHTML = `
+                <div class="row g-4">
+                    <div class="col-lg-7">
+                        <div class="p-3 border rounded bg-light mb-3">
+                            <h6 class="fw-bold mb-3"><i class="fas fa-link me-2 text-primary"></i>Conexión con Webhook</h6>
+                            
+                            <div class="mb-3">
+                                <label for="email-webhook-url" class="form-label fw-bold small">URL de la Web App de Google Apps Script</label>
+                                <input type="url" class="form-control" id="email-webhook-url" placeholder="https://script.google.com/macros/s/.../exec" value="${webhookUrl}">
+                                <div class="form-text">
+                                    Introduce la URL generada al publicar el script en Google Apps Script como Web App (ejecutada como tu cuenta y con acceso público).
+                                </div>
+                                <div id="webhook-domain-warning" class="alert alert-warning py-2 px-3 small mt-2 ${webhookUrl.includes('/a/macros/') ? '' : 'd-none'}">
+                                    <i class="fas fa-exclamation-triangle me-1"></i>
+                                    <strong>Atención:</strong> La URL contiene <code>/a/macros/iesamachado.org/</code>. Esto indica que se implementó con acceso limitado a <i>"Usuarios de iesamachado.org"</i>, lo cual provoca el error <code>401 (Unauthorized)</code> al recibir peticiones externas.
+                                    <br>Debes editar la implementación en Google Apps Script y cambiar <b>"Quién tiene acceso"</b> a <b>"Cualquier usuario" (Anyone)</b>. La URL correcta empezará por <code>https://script.google.com/macros/s/...</code>.
+                                </div>
+                            </div>
+
+                            <div class="form-check form-switch mb-3">
+                                <input class="form-check-input" type="checkbox" id="email-enabled-switch" ${isEnabled ? 'checked' : ''}>
+                                <label class="form-check-label fw-bold small" for="email-enabled-switch">
+                                    Habilitar envíos automáticos de notificaciones
+                                </label>
+                            </div>
+
+                            <div class="d-flex gap-2">
+                                <button class="btn btn-primary" id="btn-save-email-config">
+                                    <i class="fas fa-save me-1"></i>Guardar Configuración
+                                </button>
+                                <button class="btn btn-outline-info" id="btn-test-email">
+                                    <i class="fas fa-paper-plane me-1"></i>Enviar Email de Prueba
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="alert alert-secondary small">
+                            <h6 class="alert-heading fw-bold small"><i class="fas fa-filter me-1 text-primary"></i>Filtros y Etiquetas para Gmail</h6>
+                            <p class="mb-1">Todos los correos incluyen prefijos fijos para configurar reglas y etiquetas automáticas en Gmail:</p>
+                            <ul class="mb-0 ps-3">
+                                <li><code>[INTRANET-TIC] [NUEVA]</code>: Avisos al equipo de peticiones tecnológicas recibidas.</li>
+                                <li><code>[INTRANET-TIC] [EN ESPERA]</code> / <code>[RESUELTO]</code>: Avisos al solicitante.</li>
+                                <li><code>[INTRANET-3D] [NUEVA]</code>: Avisos al equipo de peticiones 3D recibidas.</li>
+                                <li><code>[INTRANET-3D] [EN ESPERA]</code> / <code>[COMPLETADO]</code>: Avisos al solicitante.</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="col-lg-5">
+                        <div class="card border">
+                            <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center py-2">
+                                <span class="small fw-bold"><i class="fab fa-google me-1"></i>Código Google Apps Script</span>
+                                <button class="btn btn-xs btn-outline-light py-0 px-2" id="btn-copy-gas-code" style="font-size: 11px;">
+                                    <i class="fas fa-copy me-1"></i>Copiar
+                                </button>
+                            </div>
+                            <div class="card-body p-2 bg-light">
+                                <pre class="small mb-0" style="max-height: 250px; overflow-y: auto; font-size: 11px;"><code id="gas-code-snippet">// Clave de seguridad compartida con la Intranet
+var SECRET_TOKEN = "Machado_TIC_2026_Secure";
+
+function doPost(e) {
+  try {
+    var data = JSON.parse(e.postData.contents);
+    
+    // 1. Validar clave secreta de la Intranet
+    if (!data.apiKey || data.apiKey !== SECRET_TOKEN) {
+      return ContentService.createTextOutput(JSON.stringify({ status: "error", message: "403 Prohibido: Clave no valida" }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+    
+    // 2. Solo permitir envios a cuentas @iesamachado.org
+    var recipients = Array.isArray(data.to) ? data.to : [data.to];
+    for (var i = 0; i < recipients.length; i++) {
+      var email = recipients[i].trim().toLowerCase();
+      if (!email.endsWith("@iesamachado.org")) {
+        return ContentService.createTextOutput(JSON.stringify({ status: "error", message: "403 Prohibido: Destinatario no permitido" }))
+          .setMimeType(ContentService.MimeType.JSON);
+      }
+    }
+    
+    MailApp.sendEmail({
+      to: recipients.join(','),
+      subject: data.subject,
+      htmlBody: data.htmlBody,
+      name: "Intranet IES Machado"
+    });
+    
+    return ContentService
+      .createTextOutput(JSON.stringify({ status: "success" }))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (error) {
+    return ContentService
+      .createTextOutput(JSON.stringify({ status: "error", message: error.toString() }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}</code></pre>
+                            </div>
+                            <div class="card-footer bg-white small text-muted">
+                                <strong>Pasos rápidos:</strong>
+                                <ol class="mb-0 ps-3 mt-1" style="font-size: 12px;">
+                                    <li>Entra en <a href="https://script.google.com" target="_blank">script.google.com</a> con la cuenta del centro.</li>
+                                    <li>Pega el código arriba y haz clic en <b>Implementar &gt; Nueva implementación</b>.</li>
+                                    <li>Tipo: <b>Aplicación web</b>.</li>
+                                    <li>Ejecutar como: <b>Yo</b>.</li>
+                                    <li>Quién tiene acceso: <b>Cualquier usuario</b> (para recibir peticiones de la Intranet).</li>
+                                    <li>Copia la URL generada y pégala aquí.</li>
+                                </ol>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            document.getElementById('btn-save-email-config').addEventListener('click', async () => {
+                const url = document.getElementById('email-webhook-url').value.trim();
+                const enabled = document.getElementById('email-enabled-switch').checked;
+
+                try {
+                    await this.firebaseService.saveEmailConfig({ webhookUrl: url, enabled });
+                    this.emailNotificationService.cachedWebhookUrl = url;
+                    UIHelpers.showToast('Configuración de notificaciones guardada correctamente', 'success');
+                } catch (e) {
+                    console.error('Error saving email config:', e);
+                    UIHelpers.showToast('Error al guardar la configuración', 'error');
+                }
+            });
+
+            const urlInput = document.getElementById('email-webhook-url');
+            const warningEl = document.getElementById('webhook-domain-warning');
+            if (urlInput && warningEl) {
+                urlInput.addEventListener('input', () => {
+                    if (urlInput.value.includes('/a/macros/')) {
+                        warningEl.classList.remove('d-none');
+                    } else {
+                        warningEl.classList.add('d-none');
+                    }
+                });
+            }
+
+            document.getElementById('btn-test-email').addEventListener('click', async () => {
+                const url = document.getElementById('email-webhook-url').value.trim();
+                if (!url) {
+                    UIHelpers.showToast('Introduce primero la URL del Webhook', 'warning');
+                    return;
+                }
+
+                if (url.includes('/a/macros/')) {
+                    UIHelpers.showToast('Atención: La URL incluye /a/macros/. Revisa "Quién tiene acceso: Cualquier usuario" en Apps Script para evitar el error 401', 'warning');
+                }
+
+                const btn = document.getElementById('btn-test-email');
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Enviando...';
+
+                try {
+                    await this.emailNotificationService.sendTestEmail(this.user.email, url);
+                    UIHelpers.showToast(`Correo de prueba enviado a ${this.user.email}`, 'success');
+                } catch (e) {
+                    console.error('Error sending test email:', e);
+                    UIHelpers.showToast('Error al enviar el correo de prueba', 'error');
+                } finally {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fas fa-paper-plane me-1"></i>Enviar Email de Prueba';
+                }
+            });
+
+            document.getElementById('btn-copy-gas-code').addEventListener('click', () => {
+                const code = document.getElementById('gas-code-snippet').textContent;
+                navigator.clipboard.writeText(code).then(() => {
+                    UIHelpers.showToast('Código copiado al portapapeles', 'info');
+                });
+            });
+
+        } catch (e) {
+            console.error('Error loading email config:', e);
+            container.innerHTML = '<div class="alert alert-danger">Error al cargar la configuración de email</div>';
+        }
+    }
+
     async fetchUsers() {
         const container = document.getElementById('users-table-container');
 
         try {
-            this.users = await this.firebaseService.getAllUsers();
-            this.departments = await this.firebaseService.getAllDepartments();
+            const [users, departments, loginMap] = await Promise.all([
+                this.firebaseService.getAllUsers(),
+                this.firebaseService.getAllDepartments(),
+                this.firebaseService.getUsersLastLoginMap()
+            ]);
+
+            this.departments = departments;
+
+            // Merge lastLogin from user doc or from login_logs map
+            this.users = users.map(u => {
+                let lastLoginDate = null;
+                if (u.lastLogin) {
+                    lastLoginDate = u.lastLogin.toDate ? u.lastLogin.toDate() : new Date(u.lastLogin);
+                } else if (loginMap[u.uid]) {
+                    lastLoginDate = loginMap[u.uid];
+                } else if (u.email && loginMap[u.email.toLowerCase()]) {
+                    lastLoginDate = loginMap[u.email.toLowerCase()];
+                }
+                return {
+                    ...u,
+                    lastLogin: lastLoginDate
+                };
+            });
+
             this.renderUserTable();
 
         } catch (error) {
@@ -469,12 +701,70 @@ export class AdminModule {
         }
     }
 
+    getLoginCourseInfo(date) {
+        if (!date) {
+            return {
+                text: 'Nunca',
+                subtext: 'Sin registros',
+                badgeClass: 'bg-light text-muted border',
+                icon: 'fas fa-minus-circle',
+                type: 'never'
+            };
+        }
+
+        const currentCourseObj = this.coursesList.find(c => c.isCurrent);
+        const currentCourseLabel = currentCourseObj?.label || this.currentCourse || UIHelpers.getSchoolYearLabel(new Date());
+
+        let currentStartYear = parseInt(currentCourseLabel.split('-')[0], 10);
+        if (isNaN(currentStartYear)) {
+            currentStartYear = UIHelpers.getSchoolYearStart(new Date()).getFullYear();
+        }
+
+        const prevCourseLabel = `${currentStartYear - 1}-${currentStartYear}`;
+        const loginCourseLabel = UIHelpers.getSchoolYearLabel(date);
+
+        if (loginCourseLabel === currentCourseLabel) {
+            return {
+                text: 'Este curso',
+                subtext: currentCourseLabel,
+                badgeClass: 'bg-success text-white',
+                icon: 'fas fa-check-circle',
+                type: 'current'
+            };
+        } else if (loginCourseLabel === prevCourseLabel) {
+            return {
+                text: 'Curso anterior',
+                subtext: prevCourseLabel,
+                badgeClass: 'bg-warning text-dark',
+                icon: 'fas fa-history',
+                type: 'previous'
+            };
+        } else {
+            return {
+                text: 'Cursos anteriores',
+                subtext: loginCourseLabel,
+                badgeClass: 'bg-secondary text-white',
+                icon: 'fas fa-archive',
+                type: 'older'
+            };
+        }
+    }
+
     renderUserTable() {
         const container = document.getElementById('users-table-container');
         if (!container) return;
 
+        const searchTerm = (this.userSearchTerm || '').trim().toLowerCase();
+        const filteredUsers = this.users.filter(u => {
+            if (!searchTerm) return true;
+            const name = (u.displayName || '').toLowerCase();
+            const email = (u.email || '').toLowerCase();
+            const dept = (this.getDepartmentName(u.department, this.departments) || '').toLowerCase();
+            return name.includes(searchTerm) || email.includes(searchTerm) || dept.includes(searchTerm);
+        });
+
         // Sort users
-        const sortedUsers = [...this.users].sort((a, b) => {
+        const sortedUsers = [...filteredUsers].sort((a, b) => {
             const valA = this.getSortValue(a, this.sortState.column);
             const valB = this.getSortValue(b, this.sortState.column);
 
@@ -492,14 +782,34 @@ export class AdminModule {
                     : '<i class="fas fa-sort-down ms-1"></i>';
             }
             return `
-                <th style="cursor: pointer;" class="sortable-header" data-column="${col}">
+                <th style="cursor: pointer;" class="sortable-header user-select-none" data-column="${col}">
                     ${label} ${icon}
                 </th>
             `;
         };
 
+        const currentCount = this.users.filter(u => this.getLoginCourseInfo(u.lastLogin).type === 'current').length;
+        const prevCount = this.users.filter(u => this.getLoginCourseInfo(u.lastLogin).type === 'previous').length;
+        const olderCount = this.users.filter(u => this.getLoginCourseInfo(u.lastLogin).type === 'older').length;
+        const neverCount = this.users.filter(u => this.getLoginCourseInfo(u.lastLogin).type === 'never').length;
+
         container.innerHTML = `
-            <table class="table table-striped table-hover">
+            <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+                <div class="d-flex align-items-center gap-2">
+                    <span class="badge bg-primary fs-6">${filteredUsers.length}</span>
+                    <span class="text-muted small">usuarios registrados</span>
+                </div>
+                <div class="d-flex flex-wrap align-items-center gap-2">
+                    <div class="small me-2">
+                        <span class="badge bg-success me-1">${currentCount}</span> Este curso
+                        <span class="badge bg-warning text-dark ms-2 me-1">${prevCount}</span> Curso anterior
+                        ${olderCount > 0 ? `<span class="badge bg-secondary ms-2 me-1">${olderCount}</span> Anteriores` : ''}
+                        <span class="badge bg-light text-muted border ms-2 me-1">${neverCount}</span> Nunca
+                    </div>
+                    <input type="text" class="form-control form-control-sm" id="user-search-input" placeholder="Buscar usuario o email..." value="${this.userSearchTerm || ''}" style="width: 210px;">
+                </div>
+            </div>
+            <table class="table table-striped table-hover align-middle">
                 <thead>
                     <tr>
                         ${renderHeader('displayName', 'Usuario')}
@@ -507,6 +817,7 @@ export class AdminModule {
                         ${renderHeader('department', 'Departamento')}
                         ${renderHeader('roles', 'Roles')}
                         ${renderHeader('isAdmin', 'Admin')}
+                        ${renderHeader('lastLogin', 'Último Acceso')}
                         <th>Acciones</th>
                     </tr>
                 </thead>
@@ -515,6 +826,20 @@ export class AdminModule {
                 </tbody>
             </table>
         `;
+
+        // Add search input listener
+        const searchInput = container.querySelector('#user-search-input');
+        if (searchInput) {
+            searchInput.addEventListener('input', (e) => {
+                this.userSearchTerm = e.target.value;
+                this.renderUserTable();
+                const newInput = document.getElementById('user-search-input');
+                if (newInput) {
+                    newInput.focus();
+                    newInput.setSelectionRange(newInput.value.length, newInput.value.length);
+                }
+            });
+        }
 
         // Add event listeners to headers
         container.querySelectorAll('.sortable-header').forEach(th => {
@@ -544,6 +869,9 @@ export class AdminModule {
         }
         if (column === 'displayName') {
             return (user.displayName || user.email.split('@')[0]).toLowerCase();
+        }
+        if (column === 'lastLogin') {
+            return user.lastLogin ? (user.lastLogin.getTime ? user.lastLogin.getTime() : new Date(user.lastLogin).getTime()) : 0;
         }
         const val = user[column];
         if (typeof val === 'string') return val.toLowerCase();
@@ -650,6 +978,31 @@ export class AdminModule {
             `<span class="badge bg-info me-1">${UIHelpers.getRoleDisplayName(role)}</span>`
         ).join('');
 
+        let lastLoginHtml = '<span class="badge bg-light text-muted border" style="font-size: 0.75rem;">Nunca</span>';
+        if (user.lastLogin) {
+            const courseInfo = this.getLoginCourseInfo(user.lastLogin);
+            const dateStr = user.lastLogin.toLocaleDateString('es-ES', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric'
+            });
+            const timeStr = user.lastLogin.toLocaleTimeString('es-ES', {
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+
+            lastLoginHtml = `
+                <div>
+                    <span class="small fw-semibold text-dark">${dateStr}</span> <span class="text-muted small">${timeStr}</span>
+                </div>
+                <div class="mt-1">
+                    <span class="badge ${courseInfo.badgeClass}" style="font-size: 0.72rem;">
+                        <i class="${courseInfo.icon} me-1"></i>${courseInfo.text}
+                    </span>
+                </div>
+            `;
+        }
+
         return `
             <tr>
                 <td>${user.displayName || user.email.split('@')[0]}</td>
@@ -657,6 +1010,7 @@ export class AdminModule {
                 <td>${this.getDepartmentName(user.department, departments)}</td>
                 <td>${rolesBadges || '<span class="text-muted">Sin roles</span>'}</td>
                 <td>${user.isAdmin ? '<span class="badge bg-warning">Sí</span>' : '<span class="text-muted">No</span>'}</td>
+                <td>${lastLoginHtml}</td>
                 <td>
                     <button class="btn btn-sm btn-outline-primary" onclick="window.editUser('${user.uid}')">
                         <i class="fas fa-edit"></i> Editar

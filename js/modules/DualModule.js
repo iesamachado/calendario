@@ -32,6 +32,10 @@ export class DualModule {
             cycle: ''
         };
 
+        // Map State
+        this.map = null;
+        this.mapMarkersLayer = null;
+
         this.render();
     }
 
@@ -68,6 +72,11 @@ export class DualModule {
                 <li class="nav-item">
                     <button class="nav-link" id="team-tab" data-bs-toggle="tab" data-bs-target="#team-content" type="button">
                         <i class="fas fa-chalkboard-teacher me-2"></i>Equipo Dual
+                    </button>
+                </li>
+                <li class="nav-item">
+                    <button class="nav-link" id="map-tab" data-bs-toggle="tab" data-bs-target="#map-content" type="button">
+                        <i class="fas fa-map-marked-alt me-2"></i>Mapa
                     </button>
                 </li>
                 <li class="nav-item">
@@ -177,6 +186,49 @@ export class DualModule {
                     </div>
                 </div>
 
+                <!-- Map Tab -->
+                <div class="tab-pane fade" id="map-content">
+                    <div class="card shadow-sm">
+                        <div class="card-body">
+                            <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+                                <h5 class="card-title fw-bold mb-0"><i class="fas fa-map-marked-alt text-primary me-2"></i>Mapa de Empresas y Alumnos</h5>
+                                <div class="d-flex flex-wrap align-items-center gap-2">
+                                    <div class="btn-group btn-group-sm" role="group">
+                                        <input type="checkbox" class="btn-check" id="map-filter-accepted" checked autocomplete="off">
+                                        <label class="btn btn-outline-success" for="map-filter-accepted"><i class="fas fa-check-circle me-1"></i>Aceptan</label>
+                                        
+                                        <input type="checkbox" class="btn-check" id="map-filter-pending" checked autocomplete="off">
+                                        <label class="btn btn-outline-warning" for="map-filter-pending"><i class="fas fa-clock me-1"></i>Pendientes</label>
+                                        
+                                        <input type="checkbox" class="btn-check" id="map-filter-declined" checked autocomplete="off">
+                                        <label class="btn btn-outline-danger" for="map-filter-declined"><i class="fas fa-times-circle me-1"></i>No Aceptan</label>
+
+                                        <input type="checkbox" class="btn-check" id="map-filter-students" checked autocomplete="off">
+                                        <label class="btn btn-outline-primary" for="map-filter-students"><i class="fas fa-user-graduate me-1"></i>Alumnos</label>
+                                    </div>
+                                    <select class="form-select form-select-sm" id="map-cycle-filter" style="width: auto;">
+                                        <option value="">Todos los Ciclos</option>
+                                    </select>
+                                    <button class="btn btn-sm btn-outline-secondary" id="btn-map-reset-view" title="Centrar mapa">
+                                        <i class="fas fa-crosshairs me-1"></i>Centrar
+                                    </button>
+                                </div>
+                            </div>
+                            <div id="dual-map-container" style="height: 600px; width: 100%; border-radius: 8px; border: 1px solid #dee2e6; z-index: 1;"></div>
+                            <div class="small text-muted mt-2 d-flex flex-wrap justify-content-between align-items-center gap-2">
+                                <div>
+                                    <span class="me-2"><i class="fas fa-info-circle me-1"></i>Leyenda:</span>
+                                    <span class="badge bg-success me-1"><i class="fas fa-building me-1"></i>Acepta</span>
+                                    <span class="badge bg-warning text-dark me-1"><i class="fas fa-building me-1"></i>Pendiente / Negociación</span>
+                                    <span class="badge bg-danger me-1"><i class="fas fa-building me-1"></i>No Acepta</span>
+                                    <span class="badge bg-primary"><i class="fas fa-user-graduate me-1"></i>Alumno</span>
+                                </div>
+                                <div id="map-status-info"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
             </div>
         `;
 
@@ -184,6 +236,7 @@ export class DualModule {
         document.getElementById('companies-tab').addEventListener('shown.bs.tab', () => this.loadCompanies());
         document.getElementById('students-tab').addEventListener('shown.bs.tab', () => this.loadStudents());
         document.getElementById('team-tab').addEventListener('shown.bs.tab', () => this.loadDualTeam());
+        document.getElementById('map-tab')?.addEventListener('shown.bs.tab', () => this.loadMap());
         document.getElementById('config-tab').addEventListener('shown.bs.tab', () => this.loadConfig());
 
         // Add Buttons
@@ -406,6 +459,8 @@ export class DualModule {
                                 <div class="fw-bold">${c.name}</div>
                                 <div class="small text-muted">${c.address || ''}</div>
                                 ${c.cif ? `<div class="small text-muted">CIF: ${c.cif}</div>` : ''}
+                                ${c.managerName ? `<div class="small text-muted"><i class="fas fa-signature me-1"></i>Convenio: ${c.managerName}${c.managerNif ? ` (${c.managerNif})` : ''}</div>` : ''}
+                                ${c.tutorName ? `<div class="small text-muted"><i class="fas fa-chalkboard-teacher me-1"></i>Tutor: ${c.tutorName}${c.tutorNif ? ` (${c.tutorNif})` : ''}</div>` : ''}
                                 ${studentsHtml}
                             </td>
                             <td>
@@ -598,15 +653,19 @@ export class DualModule {
                             <div class="mb-3">
                                 <h6 class="border-bottom pb-2 mt-2">Representante / Firma Convenio</h6>
                                 <div class="row">
-                                    <div class="col-md-4 mb-2">
+                                    <div class="col-md-3 mb-2">
                                         <label class="form-label small">Nombre Gerente</label>
                                         <input type="text" class="form-control form-control-sm" id="comp-mgr-name" value="${company?.managerName || ''}">
                                     </div>
-                                    <div class="col-md-4 mb-2">
+                                    <div class="col-md-3 mb-2">
+                                        <label class="form-label small">NIF Representante</label>
+                                        <input type="text" class="form-control form-control-sm" id="comp-mgr-nif" value="${company?.managerNif || ''}" placeholder="Ej: 12345678A">
+                                    </div>
+                                    <div class="col-md-3 mb-2">
                                         <label class="form-label small">Teléfono</label>
                                         <input type="text" class="form-control form-control-sm" id="comp-mgr-phone" value="${company?.managerPhone || ''}">
                                     </div>
-                                    <div class="col-md-4 mb-2">
+                                    <div class="col-md-3 mb-2">
                                         <label class="form-label small">Email</label>
                                         <input type="email" class="form-control form-control-sm" id="comp-mgr-email" value="${company?.managerEmail || ''}">
                                     </div>
@@ -616,15 +675,19 @@ export class DualModule {
                             <div class="mb-3">
                                 <h6 class="border-bottom pb-2 mt-2">Tutor Laboral (Empresa)</h6>
                                 <div class="row">
-                                    <div class="col-md-4 mb-2">
+                                    <div class="col-md-3 mb-2">
                                         <label class="form-label small">Nombre Tutor</label>
                                         <input type="text" class="form-control form-control-sm" id="comp-tutor-name" value="${company?.tutorName || ''}">
                                     </div>
-                                    <div class="col-md-4 mb-2">
+                                    <div class="col-md-3 mb-2">
+                                        <label class="form-label small">NIF Tutor</label>
+                                        <input type="text" class="form-control form-control-sm" id="comp-tutor-nif" value="${company?.tutorNif || ''}" placeholder="Ej: 87654321B">
+                                    </div>
+                                    <div class="col-md-3 mb-2">
                                         <label class="form-label small">Teléfono</label>
                                         <input type="text" class="form-control form-control-sm" id="comp-tutor-phone" value="${company?.tutorPhone || ''}">
                                     </div>
-                                    <div class="col-md-4 mb-2">
+                                    <div class="col-md-3 mb-2">
                                         <label class="form-label small">Email</label>
                                         <input type="email" class="form-control form-control-sm" id="comp-tutor-email" value="${company?.tutorEmail || ''}">
                                     </div>
@@ -695,11 +758,13 @@ export class DualModule {
 
                 // Manager
                 managerName: document.getElementById('comp-mgr-name').value,
+                managerNif: document.getElementById('comp-mgr-nif')?.value || '',
                 managerPhone: document.getElementById('comp-mgr-phone').value,
                 managerEmail: document.getElementById('comp-mgr-email').value,
 
                 // Tutor
                 tutorName: document.getElementById('comp-tutor-name').value,
+                tutorNif: document.getElementById('comp-tutor-nif')?.value || '',
                 tutorPhone: document.getElementById('comp-tutor-phone').value,
                 tutorEmail: document.getElementById('comp-tutor-email').value,
 
@@ -890,6 +955,18 @@ export class DualModule {
             return true;
         });
 
+        // Compute status text for sorting & display
+        displayStudents.forEach(s => {
+            const hasComp = !!this.companies.find(c => c.id === s.companyId);
+            if (hasComp) {
+                s._statusText = s.dualStatus || 'Empresa Asignada';
+            } else if (s.status === 'in_process') {
+                s._statusText = 'En proceso';
+            } else {
+                s._statusText = 'Pendiente';
+            }
+        });
+
         // Sort Logic
         if (this.studentSort.column === 'tutorName') {
             displayStudents.sort((a, b) => {
@@ -899,6 +976,13 @@ export class DualModule {
                 if (valA < valB) return -1 * dir;
                 if (valA > valB) return 1 * dir;
                 return 0;
+            });
+        } else if (this.studentSort.column === 'status') {
+            displayStudents.sort((a, b) => {
+                const valA = (a._statusText || '').toLowerCase();
+                const valB = (b._statusText || '').toLowerCase();
+                const dir = this.studentSort.direction === 'asc' ? 1 : -1;
+                return valA.localeCompare(valB) * dir;
             });
         } else {
             this.sortData(displayStudents, this.studentSort);
@@ -958,7 +1042,7 @@ export class DualModule {
                         ${buildSortHeader('Coche', 'hasCar')}
                         ${buildSortHeader('Inglés', 'englishLevel')}
                         ${buildSortHeader('Tutor Docente', 'tutorName')}
-                        <th>Estado</th>
+                        ${buildSortHeader('Estado', 'status')}
                         <th>Fechas</th>
                         <th>Acciones</th>
                     </tr>
@@ -985,18 +1069,22 @@ export class DualModule {
 
             s._companyName = company ? company.name : (s.possibleCompany || 'zzz');
 
-            // Row Color Logic
+            // Row Color & Status Badge Logic
             let rowClass = '';
+            let statusBadge = '';
             if (company) {
                 if (s.dualStatus === 'Convenio Subido a Séneca') {
                     rowClass = 'table-success-intense';
                 } else {
                     rowClass = 'table-success'; // Green: Assigned
                 }
+                statusBadge = `<span class="badge bg-white text-dark border">${s.dualStatus || 'Empresa Asignada'}</span>`;
             } else if (s.status === 'in_process') {
                 rowClass = 'table-warning'; // Yellow: In Process
+                statusBadge = `<span class="badge bg-warning text-dark"><i class="fas fa-clock me-1"></i>En proceso</span>`;
             } else {
                 rowClass = 'table-danger'; // Red: Pending
+                statusBadge = `<span class="badge bg-danger text-white"><i class="fas fa-exclamation-circle me-1"></i>Pendiente</span>`;
             }
 
             return `
@@ -1017,7 +1105,7 @@ export class DualModule {
                             <td>${s.hasCar ? '<i class="fas fa-car text-success" title="Sí"></i>' : '<span class="text-muted text-opacity-25"><i class="fas fa-car"></i></span>'}</td>
                             <td>${s.englishLevel || '-'}</td>
                             <td><div class="small text-primary fw-bold">${s._tutorName}</div></td>
-                            <td><span class="badge bg-white text-dark border">${s.dualStatus || '-'}</span></td>
+                            <td>${statusBadge}</td>
                             <td>${s.startDate} a ${s.endDate}</td>
                             <td>
                                 <div class="d-flex gap-1" onclick="event.stopPropagation()">
@@ -1234,18 +1322,24 @@ export class DualModule {
                                         </div>
                                     </div>
                                     <div class="row">
-                                        <div class="col-md-4 mb-3">
+                                        <div class="col-md-6 mb-3">
+                                            <label class="form-label">Domicilio / Dirección</label>
+                                            <input type="text" class="form-control" id="st-address" value="${student?.address || ''}" placeholder="Ej: C/ Real, 15">
+                                        </div>
+                                        <div class="col-md-6 mb-3">
                                             <label class="form-label">Población / Residencia</label>
                                             <input type="text" class="form-control" id="st-city" value="${student?.city || ''}" placeholder="Ej: Dos Hermanas">
                                         </div>
-                                        <div class="col-md-2 mb-3">
+                                    </div>
+                                    <div class="row">
+                                        <div class="col-md-4 mb-3">
                                             <label class="form-label">¿Carnet?</label>
                                             <select class="form-select" id="st-has-license">
                                                 <option value="false" ${!student?.hasLicense ? 'selected' : ''}>No</option>
                                                 <option value="true" ${student?.hasLicense ? 'selected' : ''}>Sí</option>
                                             </select>
                                         </div>
-                                        <div class="col-md-2 mb-3">
+                                        <div class="col-md-4 mb-3">
                                             <label class="form-label">¿Coche?</label>
                                             <select class="form-select" id="st-has-car">
                                                 <option value="false" ${!student?.hasCar ? 'selected' : ''}>No</option>
@@ -1380,6 +1474,7 @@ export class DualModule {
                 cycle: document.getElementById('st-cycle').value,
                 level: document.getElementById('st-level').value,
                 schedule: document.getElementById('st-schedule').value,
+                address: document.getElementById('st-address')?.value || '',
                 city: document.getElementById('st-city').value,
                 hasLicense: document.getElementById('st-has-license').value === 'true',
                 hasCar: document.getElementById('st-has-car').value === 'true',
@@ -2460,6 +2555,405 @@ export class DualModule {
         } catch (e) {
             console.error(e);
             document.getElementById('history-container').innerHTML = '<div class="text-danger p-3">Error al cargar historial</div>';
+        }
+    }
+
+    // ==================== MAPA FP DUAL ====================
+
+    async loadMap() {
+        // Ensure data is loaded
+        if (this.companies.length === 0) {
+            this.companies = await this.firebaseService.getCompanies(this.courseId);
+        }
+        if (this.students.length === 0) {
+            this.students = await this.firebaseService.getDualStudents(this.courseId);
+        }
+        if (!this.config.cycles.length) {
+            this.config = await this.firebaseService.getDualConfig(this.courseId);
+        }
+
+        // Populate cycle filter
+        const cycleSelect = document.getElementById('map-cycle-filter');
+        if (cycleSelect && cycleSelect.options.length <= 1) {
+            this.config.cycles.forEach(c => {
+                const opt = document.createElement('option');
+                opt.value = c;
+                opt.textContent = c;
+                cycleSelect.appendChild(opt);
+            });
+        }
+
+        this.initLeafletMap();
+
+        // Invalidate map size after tab is visible
+        setTimeout(() => {
+            if (this.map) {
+                this.map.invalidateSize();
+            }
+        }, 200);
+
+        await this.renderMapMarkers();
+    }
+
+    initLeafletMap() {
+        if (this.map) {
+            this.map.invalidateSize();
+            return;
+        }
+
+        if (typeof L === 'undefined') {
+            const container = document.getElementById('dual-map-container');
+            if (container) {
+                container.innerHTML = '<div class="alert alert-warning m-4"><i class="fas fa-exclamation-triangle me-2"></i>Leaflet no se ha cargado. Compruebe la conexión a internet.</div>';
+            }
+            return;
+        }
+
+        const mapContainer = document.getElementById('dual-map-container');
+        if (!mapContainer) return;
+
+        // Default center: Sevilla Metropolitan Area [37.389, -5.984]
+        this.map = L.map('dual-map-container').setView([37.389, -5.984], 11);
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '© OpenStreetMap contributors'
+        }).addTo(this.map);
+
+        this.mapMarkersLayer = L.layerGroup().addTo(this.map);
+
+        // Filter event listeners
+        ['map-filter-accepted', 'map-filter-pending', 'map-filter-declined', 'map-filter-students'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.addEventListener('change', () => this.renderMapMarkers());
+        });
+
+        const cycleSelect = document.getElementById('map-cycle-filter');
+        if (cycleSelect) {
+            cycleSelect.addEventListener('change', () => this.renderMapMarkers());
+        }
+
+        const resetBtn = document.getElementById('btn-map-reset-view');
+        if (resetBtn) {
+            resetBtn.addEventListener('click', () => this.resetMapView());
+        }
+
+        // Popup button delegation
+        mapContainer.addEventListener('click', (e) => {
+            const compBtn = e.target.closest('.btn-map-comp-edit');
+            if (compBtn) {
+                const comp = this.companies.find(c => c.id === compBtn.dataset.id);
+                if (comp) this.openCompanyModal(comp);
+                return;
+            }
+
+            const stBtn = e.target.closest('.btn-map-st-edit');
+            if (stBtn) {
+                const st = this.students.find(s => s.id === stBtn.dataset.id);
+                if (st) this.openStudentModal(st);
+                return;
+            }
+        });
+    }
+
+    createMarkerIcon(color, iconClass) {
+        return L.divIcon({
+            className: 'custom-map-pin',
+            html: `<div style="
+                background-color: ${color};
+                width: 32px;
+                height: 32px;
+                border-radius: 50% 50% 50% 0;
+                transform: rotate(-45deg);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                border: 2px solid white;
+                box-shadow: 0 2px 6px rgba(0,0,0,0.35);
+            ">
+                <i class="${iconClass}" style="transform: rotate(45deg); color: white; font-size: 13px;"></i>
+            </div>`,
+            iconSize: [32, 32],
+            iconAnchor: [16, 32],
+            popupAnchor: [0, -32]
+        });
+    }
+
+    async geocodeAddress(address, city) {
+        const addr = (address || '').trim();
+        const ct = (city || '').trim();
+        if (!addr && !ct) return null;
+
+        const cleanKey = `${addr}|${ct}`.toLowerCase().replace(/[^a-z0-9]/g, '_');
+        const cacheKey = `geo_cache_${cleanKey}`;
+
+        try {
+            const cached = localStorage.getItem(cacheKey);
+            if (cached) {
+                return JSON.parse(cached);
+            }
+        } catch (e) {
+            // ignore localStorage error
+        }
+
+        // Seville local municipalities dictionary
+        const MUNICIPALITIES = {
+            'alcala de guadaira': [37.338, -5.848],
+            'alcalá de guadaíra': [37.338, -5.848],
+            'alcala': [37.338, -5.848],
+            'sevilla': [37.389, -5.984],
+            'dos hermanas': [37.283, -5.923],
+            'mairena del aljarafe': [37.345, -6.064],
+            'mairena del alcor': [37.373, -5.748],
+            'el viso del alcor': [37.388, -5.719],
+            'san juan de aznalfarache': [37.362, -6.027],
+            'camas': [37.402, -6.033],
+            'tomares': [37.375, -6.046],
+            'utrera': [37.181, -5.782],
+            'carmona': [37.472, -5.642],
+            'la rinconada': [37.488, -5.979],
+            'san jose de la rinconada': [37.488, -5.979],
+            'coria del rio': [37.288, -6.054],
+            'coria del río': [37.288, -6.054],
+            'los palacios y villafranca': [37.162, -5.924],
+            'los palacios': [37.162, -5.924],
+            'bormujos': [37.372, -6.071],
+            'castilleja de la cuesta': [37.387, -6.051],
+            'gines': [37.387, -6.078],
+            'espartinas': [37.381, -6.126],
+            'gelves': [37.339, -6.024],
+            'montequinto': [37.343, -5.932],
+            'santiponce': [37.437, -6.043],
+            'valencina': [37.416, -6.074],
+            'la algaba': [37.461, -6.014],
+            'arachal': [37.294, -5.542],
+            'moron de la frontera': [37.121, -5.452],
+            'lebrija': [36.921, -6.078],
+            'marchena': [37.329, -5.417],
+            'ecija': [37.541, -5.079],
+            'écija': [37.541, -5.079],
+            'osuna': [37.237, -5.103]
+        };
+
+        // Normalize text for municipality check
+        const norm = (str) => str.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+        const normCity = norm(ct);
+        const normAddr = norm(addr);
+
+        let fallbackCoords = null;
+        for (const [munName, munCoords] of Object.entries(MUNICIPALITIES)) {
+            const cleanMun = norm(munName);
+            if ((normCity && normCity.includes(cleanMun)) || (normAddr && normAddr.includes(cleanMun))) {
+                fallbackCoords = munCoords;
+                break;
+            }
+        }
+
+        // If specific address, query Nominatim
+        if (addr) {
+            try {
+                const queryParts = [addr];
+                if (ct && !addr.toLowerCase().includes(ct.toLowerCase())) queryParts.push(ct);
+                queryParts.push('Sevilla', 'España');
+                const query = queryParts.join(', ');
+                const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`, {
+                    headers: { 'Accept': 'application/json' }
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data && data.length > 0) {
+                        const coords = [parseFloat(data[0].lat), parseFloat(data[0].lon)];
+                        try { localStorage.setItem(cacheKey, JSON.stringify(coords)); } catch (e) {}
+                        return coords;
+                    }
+                }
+            } catch (err) {
+                // Network error or timeout, will use fallback
+            }
+        }
+
+        // Fallback to municipality with small jitter to separate multiple pins
+        if (fallbackCoords) {
+            const jitterLat = fallbackCoords[0] + (Math.random() - 0.5) * 0.007;
+            const jitterLon = fallbackCoords[1] + (Math.random() - 0.5) * 0.007;
+            const coords = [jitterLat, jitterLon];
+            try { localStorage.setItem(cacheKey, JSON.stringify(coords)); } catch (e) {}
+            return coords;
+        }
+
+        // Default to Seville center if only city was provided or unknown
+        if (ct) {
+            const coords = [37.389 + (Math.random() - 0.5) * 0.02, -5.984 + (Math.random() - 0.5) * 0.02];
+            try { localStorage.setItem(cacheKey, JSON.stringify(coords)); } catch (e) {}
+            return coords;
+        }
+
+        return null;
+    }
+
+    async renderMapMarkers() {
+        if (!this.map || !this.mapMarkersLayer) return;
+
+        this.mapMarkersLayer.clearLayers();
+
+        const showAccepted = document.getElementById('map-filter-accepted')?.checked ?? true;
+        const showPending = document.getElementById('map-filter-pending')?.checked ?? true;
+        const showDeclined = document.getElementById('map-filter-declined')?.checked ?? true;
+        const showStudents = document.getElementById('map-filter-students')?.checked ?? true;
+        const selectedCycle = document.getElementById('map-cycle-filter')?.value || '';
+
+        const statusInfo = document.getElementById('map-status-info');
+        if (statusInfo) statusInfo.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Ubicando en el mapa...';
+
+        const allLatLngs = [];
+        let companiesCount = 0;
+        let studentsCount = 0;
+
+        // 1. Process Companies
+        for (const company of this.companies) {
+            const assignedStudents = this.students.filter(s => s.companyId === company.id);
+            const hasAssigned = assignedStudents.length > 0;
+
+            // Determine status category
+            let category = 'pending'; // yellow
+            let categoryLabel = 'En negociación / Pendiente';
+            let pinColor = '#ffc107'; // yellow
+            let pinIcon = 'fas fa-building';
+
+            if (hasAssigned || company.status === 'agreed') {
+                category = 'accepted';
+                categoryLabel = hasAssigned ? `Acoge Alumnos (${assignedStudents.length})` : 'Acepta convenio';
+                pinColor = '#198754'; // green
+                pinIcon = 'fas fa-check';
+            } else if (company.status === 'declined') {
+                category = 'declined';
+                categoryLabel = 'No Acepta';
+                pinColor = '#dc3545'; // red
+                pinIcon = 'fas fa-times';
+            }
+
+            // Check category filter
+            if (category === 'accepted' && !showAccepted) continue;
+            if (category === 'pending' && !showPending) continue;
+            if (category === 'declined' && !showDeclined) continue;
+
+            // Check cycle filter
+            if (selectedCycle) {
+                const matchesCycle = assignedStudents.some(s => s.cycle === selectedCycle);
+                if (hasAssigned && !matchesCycle) continue;
+            }
+
+            if (!company.address && !company.name) continue;
+
+            const coords = await this.geocodeAddress(company.address, '');
+            if (!coords) continue;
+
+            allLatLngs.push(coords);
+            companiesCount++;
+
+            const badgeBg = category === 'accepted' ? 'bg-success' : (category === 'declined' ? 'bg-danger' : 'bg-warning text-dark');
+            const studentsListHtml = assignedStudents.length > 0
+                ? `<div class="mt-2 pt-2 border-top">
+                    <strong class="small text-primary"><i class="fas fa-user-graduate me-1"></i>Alumnos asignados (${assignedStudents.length}):</strong>
+                    <ul class="mb-0 ps-3 small text-muted">
+                        ${assignedStudents.map(s => `<li>${s.name} <span class="badge bg-light text-dark border">${s.cycle || ''}</span></li>`).join('')}
+                    </ul>
+                   </div>`
+                : '';
+
+            const popupContent = `
+                <div style="min-width: 220px; font-family: inherit;">
+                    <div class="fw-bold fs-6 mb-1">${company.name}</div>
+                    <div class="mb-2"><span class="badge ${badgeBg}">${categoryLabel}</span></div>
+                    ${company.address ? `<div class="small text-muted mb-1"><i class="fas fa-map-marker-alt me-1 text-danger"></i>${company.address}</div>` : ''}
+                    ${company.cif ? `<div class="small text-muted mb-1"><strong>CIF:</strong> ${company.cif}</div>` : ''}
+                    ${company.managerName ? `<div class="small text-muted"><strong>Convenio / Gerente:</strong> ${company.managerName} ${company.managerNif ? `(${company.managerNif})` : ''} ${company.managerPhone ? `<br><i class="fas fa-phone-alt me-1"></i>${company.managerPhone}` : ''}</div>` : ''}
+                    ${company.tutorName ? `<div class="small text-muted mt-1"><strong>Tutor Laboral:</strong> ${company.tutorName} ${company.tutorNif ? `(${company.tutorNif})` : ''} ${company.tutorPhone ? `<br><i class="fas fa-phone-alt me-1"></i>${company.tutorPhone}` : ''}</div>` : ''}
+                    ${studentsListHtml}
+                    <button class="btn btn-sm btn-outline-primary w-100 mt-2 btn-map-comp-edit" data-id="${company.id}">
+                        <i class="fas fa-edit me-1"></i>Ver / Editar Empresa
+                    </button>
+                </div>
+            `;
+
+            const marker = L.marker(coords, {
+                icon: this.createMarkerIcon(pinColor, pinIcon)
+            }).bindPopup(popupContent);
+
+            this.mapMarkersLayer.addLayer(marker);
+        }
+
+        // 2. Process Students
+        if (showStudents) {
+            for (const student of this.students) {
+                if (selectedCycle && student.cycle !== selectedCycle) continue;
+
+                // User requested: "intentar ubicar a los alumnos según su domicilio si está indicado en la ficha del alumno"
+                if (!student.address && !student.city) continue;
+
+                const coords = await this.geocodeAddress(student.address, student.city);
+                if (!coords) continue;
+
+                allLatLngs.push(coords);
+                studentsCount++;
+
+                const assignedComp = this.companies.find(c => c.id === student.companyId);
+                const assignedText = assignedComp
+                    ? `<span class="badge bg-success"><i class="fas fa-building me-1"></i>${assignedComp.name}</span>`
+                    : (student.status === 'in_process'
+                        ? `<span class="badge bg-warning text-dark"><i class="fas fa-clock me-1"></i>En proceso</span>`
+                        : `<span class="badge bg-danger"><i class="fas fa-exclamation-circle me-1"></i>Pendiente</span>`);
+
+                const popupContent = `
+                    <div style="min-width: 200px; font-family: inherit;">
+                        <div class="fw-bold fs-6 mb-1"><i class="fas fa-user-graduate text-primary me-1"></i>${student.name}</div>
+                        <div class="mb-2">
+                            <span class="badge bg-primary me-1">${student.cycle || '-'}</span>
+                            <span class="badge bg-secondary">${student.level || '-'}</span>
+                        </div>
+                        <div class="small text-muted mb-1">
+                            <i class="fas fa-home me-1 text-primary"></i>${[student.address, student.city].filter(Boolean).join(', ')}
+                        </div>
+                        <div class="small mb-1"><strong>Estado:</strong> ${assignedText}</div>
+                        ${student.dualStatus ? `<div class="small text-muted mb-1"><strong>Convenio:</strong> ${student.dualStatus}</div>` : ''}
+                        ${student._tutorName && student._tutorName !== '-' ? `<div class="small text-muted mb-1"><strong>Tutor Docente:</strong> ${student._tutorName}</div>` : ''}
+                        <button class="btn btn-sm btn-outline-primary w-100 mt-2 btn-map-st-edit" data-id="${student.id}">
+                            <i class="fas fa-edit me-1"></i>Ver / Editar Alumno
+                        </button>
+                    </div>
+                `;
+
+                const marker = L.marker(coords, {
+                    icon: this.createMarkerIcon('#0d6efd', 'fas fa-user-graduate')
+                }).bindPopup(popupContent);
+
+                this.mapMarkersLayer.addLayer(marker);
+            }
+        }
+
+        if (statusInfo) {
+            statusInfo.innerHTML = `<span><i class="fas fa-map-pin me-1 text-primary"></i><strong>${companiesCount}</strong> empresas y <strong>${studentsCount}</strong> alumnos en el mapa</span>`;
+        }
+
+        // Adjust view if markers exist
+        if (allLatLngs.length > 0) {
+            try {
+                const bounds = L.latLngBounds(allLatLngs);
+                this.map.fitBounds(bounds, { padding: [35, 35], maxZoom: 14 });
+            } catch (e) {
+                // fallback
+            }
+        }
+    }
+
+    resetMapView() {
+        if (!this.map) return;
+        const layers = this.mapMarkersLayer?.getLayers() || [];
+        if (layers.length > 0) {
+            const latLngs = layers.map(l => l.getLatLng());
+            this.map.fitBounds(L.latLngBounds(latLngs), { padding: [35, 35], maxZoom: 14 });
+        } else {
+            this.map.setView([37.389, -5.984], 11);
         }
     }
 }

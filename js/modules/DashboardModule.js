@@ -83,7 +83,8 @@ export class DashboardModule {
             { key: 'tickets_3d', title: 'Peticiones 3D', icon: 'cube', color: 'success', link: '#/tickets-3d', desc: 'Peticiones de impresión' },
             { key: 'dual', title: 'Gestión Dual', icon: 'user-graduate', color: 'purple', link: '#/dual', desc: 'Control de alumnos y empresas' },
             { key: 'sum', title: 'Reserva SUM', icon: 'building', color: 'secondary', link: '#/reserva-sum', desc: 'Salón de Actos' },
-            { key: 'carts', title: 'Carros Portátiles', icon: 'shopping-cart', color: 'dark', link: '#/reserva-carros', desc: 'Reserva de equipos' }
+            { key: 'carts', title: 'Carros Portátiles', icon: 'shopping-cart', color: 'dark', link: '#/reserva-carros', desc: 'Reserva de equipos' },
+            { key: 'it_room', title: 'Aula de Informática', icon: 'desktop', color: 'info', link: '#/reserva-informatica', desc: 'Reserva aula de ordenadores' }
         ];
 
         // Filter visible modules
@@ -120,7 +121,7 @@ export class DashboardModule {
                     const k = pKeys[index];
                     if (k === 'tic' || k === 'mnt') {
                         // Count open tickets
-                        stats[k] = res.filter(t => t.status === 'abierto' || t.status === 'en_progreso').length;
+                        stats[k] = res.filter(t => t.status === 'abierto' || t.status === 'en_progreso' || t.status === 'en_espera').length;
                     } else if (k === 'ann') {
                         stats[k] = res.length;
                     }
@@ -253,12 +254,12 @@ export class DashboardModule {
 
             if (this.isModuleVisible('tickets_tic')) {
                 const ticketsTic = await this.firebaseService.getTickets('tic', this.user.uid, this.userRoles, null, this.courseId);
-                myOpenTickets.push(...ticketsTic.filter(t => t.requestedBy === this.user.uid && (t.status === 'abierto' || t.status === 'en_progreso')));
+                myOpenTickets.push(...ticketsTic.filter(t => t.requestedBy === this.user.uid && (t.status === 'abierto' || t.status === 'en_progreso' || t.status === 'en_espera')));
             }
 
             if (this.isModuleVisible('tickets_maintenance')) {
                 const ticketsMnt = await this.firebaseService.getTickets('maintenance', this.user.uid, this.userRoles, null, this.courseId);
-                myOpenTickets.push(...ticketsMnt.filter(t => t.requestedBy === this.user.uid && (t.status === 'abierto' || t.status === 'en_progreso')));
+                myOpenTickets.push(...ticketsMnt.filter(t => t.requestedBy === this.user.uid && (t.status === 'abierto' || t.status === 'en_progreso' || t.status === 'en_espera')));
             }
 
             if (myOpenTickets.length === 0) {

@@ -199,6 +199,13 @@ service cloud.firestore {
         allow delete: if isAuthenticated() && isCurrentCourse(courseId) && (resource.data.userId == request.auth.uid || isAdmin() || hasRole('equipo_tic'));
       }
 
+      // --- IT ROOM (AULA INFORMÁTICA) RESERVATIONS ---
+      match /it_room_reservations/{reservationId} {
+        allow read: if isAuthenticated() && (isCurrentCourse(courseId) || canReadHistory());
+        allow create: if isAuthenticated() && isCurrentCourse(courseId) && request.resource.data.userId == request.auth.uid;
+        allow delete: if isAuthenticated() && isCurrentCourse(courseId) && (resource.data.userId == request.auth.uid || isAdmin() || hasRole('equipo_tic'));
+      }
+
       // --- DUAL: COMPANIES ---
       match /companies/{companyId} {
         allow read: if isAuthenticated() && (isCurrentCourse(courseId) || canReadDualHistory());

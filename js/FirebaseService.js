@@ -110,6 +110,7 @@ export class FirebaseService {
                 const user = result.user;
                 if (this.validateUserEmail(user.email)) {
                     await this.ensureUserDocExists(user);
+                    await this.updateUserLastLogin(user.uid);
                     this.recordLoginEvent({
                         type: 'success',
                         uid: user.uid,
@@ -142,6 +143,7 @@ export class FirebaseService {
     async ensureUserDocExists(user) {
         const userRef = doc(this.db, "users", user.uid);
         const snap = await getDoc(userRef);
+        const now = new Date();
         if (!snap.exists()) {
             await setDoc(userRef, {
                 email: user.email,
@@ -149,8 +151,20 @@ export class FirebaseService {
                 isAdmin: false,
                 roles: [],
                 department: null,
-                createdAt: new Date()
+                createdAt: now,
+                lastLogin: now
             });
+        }
+    }
+
+    async updateUserLastLogin(uid) {
+        try {
+            const userRef = doc(this.db, "users", uid);
+            await updateDoc(userRef, {
+                lastLogin: new Date()
+            });
+        } catch (e) {
+            console.error("Error updating user lastLogin:", e);
         }
     }
 
@@ -545,6 +559,39 @@ export class FirebaseService {
         }
     }
 
+    async getUsersLastLoginMap() {
+        try {
+            const q = query(
+                collection(this.db, 'login_logs'),
+                orderBy('timestamp', 'desc'),
+                limit(1500)
+            );
+            const snap = await getDocs(q);
+            const map = {};
+            snap.forEach(doc => {
+                const data = doc.data();
+                if (data.type === 'success' || !data.type) {
+                    const ts = data.timestamp?.toDate ? data.timestamp.toDate() : (data.timestamp ? new Date(data.timestamp) : null);
+                    if (ts) {
+                        if (data.uid && (!map[data.uid] || ts > map[data.uid])) {
+                            map[data.uid] = ts;
+                        }
+                        if (data.email) {
+                            const emailLower = data.email.toLowerCase();
+                            if (!map[emailLower] || ts > map[emailLower]) {
+                                map[emailLower] = ts;
+                            }
+                        }
+                    }
+                }
+            });
+            return map;
+        } catch (e) {
+            console.warn("Error getting users last login map from login_logs:", e);
+            return {};
+        }
+    }
+
     // ==================== DEPARTMENT MANAGEMENT ====================
 
     async getAllDepartments() {
@@ -638,12 +685,22 @@ export class FirebaseService {
         return `${prefix}-${String(counter).padStart(3, '0')}`;
     }
 
-    async createTicket(type, data, userUid, userName, userDepartment, courseId) {
+    async createTicket(type, data, userUid, userName, userDepartment, courseId, createdByUid = null, createdByName = null, requestedByEmail = null, createdByEmail = null) {
         const ticketNumber = await this.getNextTicketNumber(type, courseId);
         let collection_name;
         if (type === 'tic') collection_name = 'tickets_tic';
         else if (type === 'maintenance') collection_name = 'tickets_maintenance';
         else if (type === '3d') collection_name = 'tickets_3d';
+
+        const isCreatedOnBehalf = createdByUid && createdByUid !== userUid;
+        const creationContent = isCreatedOnBehalf
+            ? `Petición creada por ${createdByName} en nombre de ${userName}`
+            : 'Petición creada';
+
+        // Resolve emails if not provided
+        const currentUser = this.auth?.currentUser;
+        const finalRequestedByEmail = requestedByEmail || data.requestedByEmail || (currentUser && currentUser.uid === userUid ? currentUser.email : null);
+        const finalCreatedByEmail = createdByEmail || data.createdByEmail || (currentUser && currentUser.uid === (createdByUid || userUid) ? currentUser.email : finalRequestedByEmail);
 
         const ticketRef = doc(this.courseCol(collection_name, courseId));
         const ticketData = {
@@ -651,7 +708,11 @@ export class FirebaseService {
             ...data,
             requestedBy: userUid,
             requestedByName: userName,
+            requestedByEmail: finalRequestedByEmail,
             requestedByDepartment: userDepartment || 'Sin departamento',
+            createdBy: createdByUid || userUid,
+            createdByName: createdByName || userName,
+            createdByEmail: finalCreatedByEmail,
             createdAt: new Date(),
             status: type === 'maintenance' ? 'pendiente_validacion' : 'abierto',
             assignedTo: null,
@@ -660,9 +721,9 @@ export class FirebaseService {
             history: [{
                 timestamp: new Date(),
                 type: 'creation',
-                userId: userUid,
-                userName: userName,
-                content: 'Petición creada'
+                userId: createdByUid || userUid,
+                userName: createdByName || userName,
+                content: creationContent
             }]
         };
 
@@ -671,9 +732,10 @@ export class FirebaseService {
             ticketData.equipmentCost = 0;
             ticketData.totalCost = 0;
         } else if (type === '3d') {
-            ticketData.filamentUsed = 0; // in grams
-            ticketData.printTime = 0; // in minutes
-            ticketData.imageUrl = null;
+            ticketData.filamentUsed = data.filamentUsed !== undefined ? parseFloat(data.filamentUsed) || 0 : 0; // in grams
+            ticketData.cost = data.cost !== undefined ? parseFloat(data.cost) || 0 : (ticketData.filamentUsed > 0 ? Math.ceil(ticketData.filamentUsed / 20) * 0.5 : 0);
+            ticketData.printTime = data.printTime !== undefined ? parseFloat(data.printTime) || 0 : 0; // in minutes
+            ticketData.imageUrl = data.imageUrl || null;
             ticketData.printedBy = null;
             ticketData.printedByName = null;
         }
@@ -829,6 +891,7 @@ export class FirebaseService {
             total: tickets.length,
             open: tickets.filter(t => t.status === 'abierto' || t.status === 'pendiente_validacion').length,
             inProgress: tickets.filter(t => t.status === 'en_progreso').length,
+            waiting: tickets.filter(t => t.status === 'en_espera').length,
             resolved: tickets.filter(t => t.status === 'resuelto' || t.status === 'cerrado').length,
             byDepartment: {},
             byUser: {},
@@ -881,6 +944,11 @@ export class FirebaseService {
                 const total = labor + material;
                 stats.totalCost += total;
                 stats.byDepartment[dept].totalCost += total;
+            } else if (type === '3d') {
+                const filament = parseFloat(ticket.filamentUsed) || 0;
+                const cost = ticket.cost !== undefined ? parseFloat(ticket.cost) : (filament > 0 ? Math.ceil(filament / 20) * 0.5 : 0);
+                stats.totalCost += cost;
+                stats.byDepartment[dept].totalCost += cost;
             }
         });
 
@@ -1250,6 +1318,57 @@ export class FirebaseService {
         return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     }
 
+    // --- IT Room (Aula de Informática) ---
+
+    async getITRoomReservations(dateStr, courseId) {
+        const q = query(this.courseCol('it_room_reservations', courseId), where('date', '==', dateStr));
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    }
+
+    async getITRoomReservationsInRange(startDate, endDate, courseId) {
+        const q = query(
+            this.courseCol('it_room_reservations', courseId),
+            where('date', '>=', startDate),
+            where('date', '<=', endDate)
+        );
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    }
+
+    async reserveITRoom(dateStr, slotIndex, slotLabel, title, userUid, userName, isPriorityDept = false, comment = '', courseId, isMassReservation = false, massId = null) {
+        const reservationData = {
+            date: dateStr,
+            slotIndex: slotIndex,
+            slotLabel: slotLabel,
+            title: title || '',
+            userId: userUid,
+            userName: userName,
+            isPriorityDept: Boolean(isPriorityDept),
+            department: isPriorityDept ? 'Informática' : '',
+            comment: comment || '',
+            isMassReservation: Boolean(isMassReservation),
+            massId: massId || null,
+            createdAt: new Date()
+        };
+        await addDoc(this.courseCol('it_room_reservations', courseId), reservationData);
+    }
+
+    async cancelITRoomReservation(reservationId, courseId) {
+        await deleteDoc(this.courseDoc('it_room_reservations', reservationId, courseId));
+    }
+
+    async getReservationsForITRoomInRange(slotIndex, startDateStr, userId, courseId) {
+        const q = query(
+            this.courseCol('it_room_reservations', courseId),
+            where('slotIndex', '==', slotIndex),
+            where('userId', '==', userId),
+            where('date', '>=', startDateStr)
+        );
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    }
+
     // ==================== SYSTEM SETTINGS ====================
 
     async getModuleConfig() {
@@ -1267,6 +1386,7 @@ export class FirebaseService {
             tickets_3d: 'active',
             sum: 'active',
             carts: 'active',
+            it_room: 'active',
             departments: 'active'
         };
     }
@@ -1275,4 +1395,82 @@ export class FirebaseService {
         const docRef = doc(this.db, 'settings', 'modules');
         await setDoc(docRef, config, { merge: true });
     }
+
+    // ==================== EMAIL NOTIFICATIONS & PREFERENCES ====================
+
+    async getEmailConfig() {
+        try {
+            const docRef = doc(this.db, 'settings', 'email_config');
+            const snap = await getDoc(docRef);
+            return snap.exists() ? snap.data() : { webhookUrl: '', enabled: true };
+        } catch (e) {
+            console.error('Error getting email config:', e);
+            return { webhookUrl: '', enabled: true };
+        }
+    }
+
+    async saveEmailConfig(config) {
+        const docRef = doc(this.db, 'settings', 'email_config');
+        await setDoc(docRef, config, { merge: true });
+    }
+
+    async getUserNotificationPreferences(uid) {
+        try {
+            const userRef = doc(this.db, 'users', uid);
+            const snap = await getDoc(userRef);
+            if (snap.exists()) {
+                const data = snap.data();
+                return data.notificationPreferences || { emailTicNew: true, email3dNew: true };
+            }
+        } catch (e) {
+            console.error('Error getting user notification preferences:', e);
+        }
+        return { emailTicNew: true, email3dNew: true };
+    }
+
+    async updateUserNotificationPreferences(uid, preferences) {
+        const userRef = doc(this.db, 'users', uid);
+        await updateDoc(userRef, {
+            notificationPreferences: preferences
+        });
+    }
+
+    async getTeamNotificationEmails(role, preferenceKey = null) {
+        try {
+            const usersSnap = await getDocs(collection(this.db, 'users'));
+            const emails = [];
+            usersSnap.forEach(docSnap => {
+                const userData = docSnap.data();
+                const roles = userData.roles || [];
+                // Only notify explicit members of the requested role/team (do not include general admins or director)
+                if (roles.includes(role)) {
+                    const prefs = userData.notificationPreferences || {};
+                    const isEnabled = preferenceKey ? (prefs[preferenceKey] !== false) : true;
+                    if (isEnabled && userData.email) {
+                        emails.push(userData.email);
+                    }
+                }
+            });
+            return emails;
+        } catch (e) {
+            console.error('Error fetching team notification emails:', e);
+            return [];
+        }
+    }
+
+    async getTicketRequesterEmail(ticket) {
+        if (ticket.requestedByEmail) return ticket.requestedByEmail;
+        if (ticket.requestedBy) {
+            try {
+                const userSnap = await getDoc(doc(this.db, 'users', ticket.requestedBy));
+                if (userSnap.exists() && userSnap.data().email) {
+                    return userSnap.data().email;
+                }
+            } catch (e) {
+                console.error('Error resolving requester email:', e);
+            }
+        }
+        return null;
+    }
 }
+

@@ -17,6 +17,7 @@ import { DepartmentsModule } from './modules/DepartmentsModule.js';
 import { MyDepartmentModule } from './modules/MyDepartmentModule.js';
 import { HelpModule } from './modules/HelpModule.js';
 import { DualModule } from './modules/DualModule.js';
+import { ITRoomModule } from './modules/ITRoomModule.js';
 
 class DashboardApp {
     constructor() {
@@ -37,6 +38,7 @@ class DashboardApp {
         this.firebaseService.onAuthStateChange(async (user) => {
             if (user && this.firebaseService.validateUserEmail(user.email)) {
                 await this.firebaseService.ensureUserDocExists(user);
+                this.firebaseService.updateUserLastLogin(user.uid);
                 this.user = user;
                 this.isAdmin = await this.firebaseService.getUserRole(user.uid);
                 this.userRoles = await this.firebaseService.getUserRoles(user.uid);
@@ -104,7 +106,8 @@ class DashboardApp {
             'tickets_3d': '#/tickets-3d',
             'dual': '#/dual',
             'sum': '#/reserva-sum',
-            'carts': '#/reserva-carros'
+            'carts': '#/reserva-carros',
+            'it_room': '#/reserva-informatica'
         };
 
         for (const [key, href] of Object.entries(mapping)) {
@@ -213,6 +216,10 @@ class DashboardApp {
             return checkAccess('radio_kits', () => new RadioKitsModule(mainContent, this.firebaseService, this.user, this.userRoles, this.isAdmin, this.activeCourse));
         });
 
+        this.router.register('/reserva-informatica', () => {
+            return checkAccess('it_room', () => new ITRoomModule(mainContent, this.firebaseService, this.user, this.userRoles, this.isAdmin, this.activeCourse));
+        });
+
         if (this.isAdmin) {
             this.router.register('/admin', () => {
                 return new AdminModule(mainContent, this.firebaseService, this.user, this.coursesList, this.currentCourse);
@@ -298,6 +305,74 @@ class DashboardApp {
             this.firebaseService.logout();
             window.location.href = 'index.html';
         });
+
+        // Notification Preferences Modal
+        const btnNotifPref = document.getElementById('btn-user-notifications');
+        const modalEl = document.getElementById('modalNotificationPreferences');
+        if (btnNotifPref && modalEl) {
+            const bsNotifModal = new bootstrap.Modal(modalEl);
+
+            btnNotifPref.addEventListener('click', async () => {
+                const emailSpan = document.getElementById('pref-user-email');
+                if (emailSpan) emailSpan.textContent = this.user.email;
+
+                // Show/hide role-specific preference rows (only for actual team members)
+                const itemTic = document.getElementById('item-pref-tic');
+                const item3d = document.getElementById('item-pref-3d');
+                const isTic = this.userRoles.includes('equipo_tic');
+                const is3d = this.userRoles.includes('equipo_3d');
+
+                if (itemTic) itemTic.style.display = isTic ? 'flex' : 'none';
+                if (item3d) item3d.style.display = is3d ? 'flex' : 'none';
+
+                // Fetch current user preferences
+                try {
+                    const prefs = await this.firebaseService.getUserNotificationPreferences(this.user.uid);
+                    const chkTic = document.getElementById('pref-email-tic');
+                    const chk3d = document.getElementById('pref-email-3d');
+                    if (chkTic) chkTic.checked = prefs.emailTicNew !== false;
+                    if (chk3d) chk3d.checked = prefs.email3dNew !== false;
+                } catch (e) {
+                    console.error('Error fetching notification preferences:', e);
+                }
+
+                bsNotifModal.show();
+            });
+
+            const btnSaveNotif = document.getElementById('btn-save-user-notifications');
+            if (btnSaveNotif) {
+                btnSaveNotif.addEventListener('click', async () => {
+                    btnSaveNotif.disabled = true;
+                    try {
+                        const emailTicNew = document.getElementById('pref-email-tic')?.checked !== false;
+                        const email3dNew = document.getElementById('pref-email-3d')?.checked !== false;
+
+                        await this.firebaseService.updateUserNotificationPreferences(this.user.uid, {
+                            emailTicNew,
+                            email3dNew
+                        });
+
+                        UIHelpers.showToast('Preferencias de notificación guardadas', 'success');
+                        bsNotifModal.hide();
+
+                        // Refresh button labels on the current module if visible
+                        const ticStatus = document.getElementById('tic-notif-status');
+                        if (ticStatus) {
+                            ticStatus.textContent = emailTicNew ? 'Activados' : 'Desactivados';
+                        }
+                        const status3d = document.getElementById('3d-notif-status');
+                        if (status3d) {
+                            status3d.textContent = email3dNew ? 'Activados' : 'Desactivados';
+                        }
+                    } catch (e) {
+                        console.error('Error saving notification preferences:', e);
+                        UIHelpers.showToast('Error al guardar preferencias', 'error');
+                    } finally {
+                        btnSaveNotif.disabled = false;
+                    }
+                });
+            }
+        }
 
         // Sidebar Toggles
         const sidebar = document.getElementById('sidebar');
