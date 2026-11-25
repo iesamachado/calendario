@@ -192,6 +192,14 @@ export class LaptopCartsModule {
         this.calendar.render();
     }
 
+    switchToInventoryTab() {
+        const tabEl = document.getElementById('tab-inventory-link');
+        if (tabEl) {
+            const bsTab = bootstrap.Tab.getOrCreateInstance(tabEl);
+            bsTab.show();
+        }
+    }
+
     renderGrid(container) {
         if (this.carts.length === 0) {
             container.innerHTML = '<div class="alert alert-info">No hay carros disponibles en el sistema.</div>';
@@ -199,9 +207,40 @@ export class LaptopCartsModule {
         }
 
         // Filter active carts only
-        const activeCarts = this.carts.filter(c => c.active);
+        const activeCarts = this.carts.filter(c => c.active !== false);
+        const disabledCarts = this.carts.filter(c => c.active === false);
+
+        let bannerHtml = '';
+        if (this.isTic && disabledCarts.length > 0) {
+            bannerHtml = `
+                <div class="alert alert-warning d-flex justify-content-between align-items-center py-2 px-3 mb-3 border-warning shadow-sm">
+                    <div>
+                        <i class="fas fa-info-circle text-warning fs-5 me-2 align-middle"></i>
+                        <span><strong>Aviso TIC:</strong> Hay <strong>${disabledCarts.length}</strong> carro(s) temporalmente deshabilitado(s) que no aparecen para préstamo: 
+                            ${disabledCarts.map(c => `<strong>${c.name}</strong>${c.disabledReason ? ` (${c.disabledReason})` : ''}`).join(', ')}.
+                        </span>
+                    </div>
+                    <button class="btn btn-sm btn-outline-dark" onclick="window.currentCartsModule.switchToInventoryTab()">
+                        <i class="fas fa-tools me-1"></i>Gestionar Carros
+                    </button>
+                </div>
+            `;
+        }
+
+        if (activeCarts.length === 0) {
+            container.innerHTML = `
+                ${bannerHtml}
+                <div class="alert alert-warning text-center p-4">
+                    <i class="fas fa-ban fa-2x mb-3 text-warning"></i>
+                    <h5>No hay carros disponibles para préstamo</h5>
+                    <p class="mb-0 text-muted">Todos los carros están temporalmente deshabilitados para reservas o en mantenimiento por el equipo TIC.</p>
+                </div>
+            `;
+            return;
+        }
 
         let html = `
+            ${bannerHtml}
             <table class="table table-bordered text-center align-middle">
                 <thead class="table-light">
                     <tr>
@@ -277,6 +316,11 @@ export class LaptopCartsModule {
     }
 
     async makeReservation(slotIndex, slotLabel, cartId, cartName) {
+        const cart = this.carts.find(c => c.id === cartId);
+        if (cart && cart.active === false) {
+            UIHelpers.showToast('Este carro está temporalmente deshabilitado para préstamo.', 'warning');
+            return;
+        }
         this.showReservationTypeModal(slotIndex, slotLabel, cartId, cartName);
     }
 
@@ -412,6 +456,11 @@ export class LaptopCartsModule {
     }
 
     async processSingleReservation(dateStr, slotIndex, slotLabel, cartId, cartName, comment = '') {
+        const cart = this.carts.find(c => c.id === cartId);
+        if (cart && cart.active === false) {
+            UIHelpers.showToast('No se puede reservar: el carro está deshabilitado temporalmente.', 'warning');
+            return;
+        }
         try {
             await this.firebaseService.reserveCart(
                 dateStr,
@@ -432,6 +481,11 @@ export class LaptopCartsModule {
     }
 
     async processMassReservation(slotIndex, slotLabel, cartId, cartName, comment = '') {
+        const cart = this.carts.find(c => c.id === cartId);
+        if (cart && cart.active === false) {
+            UIHelpers.showToast('No se puede reservar: el carro está deshabilitado temporalmente.', 'warning');
+            return;
+        }
         // Use noon to avoid DST midnight issues
         const startDate = new Date(this.currentDate);
         startDate.setHours(12, 0, 0, 0);
@@ -618,14 +672,27 @@ export class LaptopCartsModule {
                         if (cart.cartType === 'blanco') icon = '<i class="fas fa-hdd text-secondary me-2" title="Carrito blanco"></i>';
                         if (cart.cartType === 'blanco_azul') icon = '<i class="fas fa-server text-primary me-2" title="Carrito blanco (puertas azules)"></i>';
                         
+                        const isActive = cart.active !== false;
                         const activeIncidents = (cart.incidents || []).filter(i => !i.resolved);
                         
                         return `
-                        <div class="list-group-item d-flex justify-content-between align-items-center">
-                            <div>
-                                <h5 class="mb-1">${icon}${cart.name} ${!cart.active ? '<span class="badge bg-danger">Inactivo</span>' : ''}</h5>
+                        <div class="list-group-item d-flex justify-content-between align-items-center flex-wrap gap-2 ${!isActive ? 'bg-light border-start border-4 border-danger' : ''}">
+                            <div style="max-width: 70%;">
+                                <div class="d-flex align-items-center gap-2 mb-1 flex-wrap">
+                                    <h5 class="mb-0">${icon}${cart.name}</h5>
+                                    ${isActive ?
+                                        '<span class="badge bg-success"><i class="fas fa-check-circle me-1"></i>Disponible para préstamo</span>' :
+                                        '<span class="badge bg-danger"><i class="fas fa-ban me-1"></i>Deshabilitado temporalmente</span>'
+                                    }
+                                </div>
+                                ${!isActive ? `
+                                    <div class="alert alert-danger py-1 px-2 my-1 small border-0 d-inline-flex align-items-center gap-1">
+                                        <i class="fas fa-info-circle"></i>
+                                        <span><strong>No sale para préstamo</strong>${cart.disabledReason ? `: ${cart.disabledReason}` : ''}</span>
+                                    </div>
+                                ` : ''}
                                 <p class="mb-1 text-muted" style="font-size: 0.9rem;">${cart.description || ''}</p>
-                                <div class="d-flex gap-3 align-items-center mt-2 flex-wrap">
+                                <div class="d-flex gap-2 align-items-center mt-2 flex-wrap">
                                     <span class="badge ${this.getLocationBadgeClass(cart.location)}"><i class="fas fa-map-marker-alt me-1"></i>${cart.location}</span>
                                     ${cart.laptopCount ? `<small class="text-secondary"><i class="fas fa-laptop me-1"></i>${cart.laptopCount} uds.</small>` : ''}
                                     ${cart.dotationYear ? `<small class="text-secondary"><i class="fas fa-calendar-alt me-1"></i>Año: ${cart.dotationYear}</small>` : ''}
@@ -635,14 +702,23 @@ export class LaptopCartsModule {
                                     }
                                 </div>
                             </div>
-                            <div class="d-flex align-items-center">
-                                <button class="btn btn-sm ${activeIncidents.length > 0 ? 'btn-warning text-dark' : 'btn-outline-warning text-dark'} me-2" onclick="window.currentCartsModule.manageCartIncidents('${cart.id}')" title="Gestionar Incidencias">
+                            <div class="d-flex align-items-center flex-wrap gap-1">
+                                <button class="btn btn-sm ${activeIncidents.length > 0 ? 'btn-warning text-dark' : 'btn-outline-warning text-dark'} me-1" onclick="window.currentCartsModule.manageCartIncidents('${cart.id}')" title="Gestionar Incidencias">
                                     <i class="fas fa-exclamation-triangle"></i> Incidencias ${activeIncidents.length > 0 ? `<span class="badge bg-dark text-white rounded-pill ms-1">${activeIncidents.length}</span>` : ''}
                                 </button>
-                                <button class="btn btn-sm btn-outline-secondary me-2" onclick="window.currentCartsModule.editCart('${cart.id}')">
+                                ${isActive ? `
+                                    <button class="btn btn-sm btn-outline-danger me-1" onclick="window.currentCartsModule.promptToggleCartStatus('${cart.id}', false)" title="Deshabilitar temporalmente para que no salga para préstamo">
+                                        <i class="fas fa-ban me-1"></i>Deshabilitar
+                                    </button>
+                                ` : `
+                                    <button class="btn btn-sm btn-success text-white me-1" onclick="window.currentCartsModule.promptToggleCartStatus('${cart.id}', true)" title="Habilitar para préstamo">
+                                        <i class="fas fa-check-circle me-1"></i>Habilitar préstamo
+                                    </button>
+                                `}
+                                <button class="btn btn-sm btn-outline-secondary me-1" onclick="window.currentCartsModule.editCart('${cart.id}')" title="Editar Carro">
                                     <i class="fas fa-edit"></i>
                                 </button>
-                                <button class="btn btn-sm btn-outline-danger" onclick="window.currentCartsModule.deleteCart('${cart.id}')">
+                                <button class="btn btn-sm btn-outline-danger" onclick="window.currentCartsModule.deleteCart('${cart.id}')" title="Eliminar Carro">
                                     <i class="fas fa-trash"></i>
                                 </button>
                             </div>
@@ -657,6 +733,83 @@ export class LaptopCartsModule {
         }
     }
 
+    async promptToggleCartStatus(cartId, active) {
+        if (!this.isTic) {
+            UIHelpers.showToast('Solo el Equipo TIC puede cambiar el estado de los carros.', 'error');
+            return;
+        }
+
+        const cart = this.carts.find(c => c.id === cartId);
+        if (!cart) return;
+
+        if (active) {
+            try {
+                await this.firebaseService.toggleCartActive(cartId, true);
+                UIHelpers.showToast(`Carro "${cart.name}" habilitado para préstamo.`, 'success');
+                await this.loadInventoryView();
+            } catch (error) {
+                console.error(error);
+                UIHelpers.showToast('Error al habilitar el carro: ' + error.message, 'error');
+            }
+        } else {
+            const existingModal = document.getElementById('disable-cart-modal');
+            if (existingModal) existingModal.remove();
+
+            const modal = document.createElement('div');
+            modal.className = 'modal fade';
+            modal.id = 'disable-cart-modal';
+            modal.innerHTML = `
+                <div class="modal-dialog">
+                    <div class="modal-content shadow">
+                        <div class="modal-header bg-warning text-dark">
+                            <h5 class="modal-title fw-bold">
+                                <i class="fas fa-pause-circle me-2"></i>Deshabilitar Carro Temporalmente
+                            </h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <p>¿Deseas deshabilitar temporalmente <strong>${cart.name}</strong>?</p>
+                            <div class="alert alert-info py-2 px-3 small">
+                                <i class="fas fa-info-circle me-1"></i><strong>Información:</strong>
+                                El carro dejará de mostrarse a los profesores en la tabla de reservas y préstamos.
+                                <u>El carro no se borrará</u> y sus datos e incidencias se conservarán intactos. Podrás volver a habilitarlo en cualquier momento.
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label fw-bold" for="disable-reason-input">Motivo de la deshabilitación (opcional):</label>
+                                <input type="text" class="form-control" id="disable-reason-input" placeholder="Ej: En revisión técnica, Reparación de cargadores, Avería...">
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                            <button type="button" class="btn btn-warning fw-bold text-dark" id="btn-confirm-disable-cart">
+                                <i class="fas fa-ban me-1"></i>Deshabilitar Carro
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            document.body.appendChild(modal);
+            const bsModal = new bootstrap.Modal(modal);
+            bsModal.show();
+
+            document.getElementById('btn-confirm-disable-cart').addEventListener('click', async () => {
+                const reason = document.getElementById('disable-reason-input').value.trim();
+                bsModal.hide();
+                try {
+                    await this.firebaseService.toggleCartActive(cartId, false, reason);
+                    UIHelpers.showToast(`Carro "${cart.name}" deshabilitado temporalmente. Ya no saldrá para préstamo.`, 'success');
+                    await this.loadInventoryView();
+                } catch (error) {
+                    console.error(error);
+                    UIHelpers.showToast('Error al deshabilitar el carro: ' + error.message, 'error');
+                }
+            });
+
+            modal.addEventListener('hidden.bs.modal', () => modal.remove());
+        }
+    }
+
     showAddCartModal() {
         this.showCartModal(); // Mode create
     }
@@ -667,7 +820,11 @@ export class LaptopCartsModule {
     }
 
     async deleteCart(cartId) {
-        if (!confirm('¿Eliminar este carro? Se perderán las reservas históricas asociadas (si no se borraron antes).')) return;
+        if (!this.isTic) {
+            UIHelpers.showToast('Solo el Equipo TIC puede eliminar carros.', 'error');
+            return;
+        }
+        if (!confirm('¿Deseas eliminar definitivamente este carro?\n\n¡Atención! Si solo quieres que el carro no esté disponible para préstamo temporalmente, pulsa "Cancelar" y usa el botón "Deshabilitar" (así no perderás datos ni reservas históricas).\n\n¿Eliminar definitivamente de todos modos?')) return;
         try {
             await this.firebaseService.deleteCart(cartId);
             UIHelpers.showToast('Carro eliminado', 'success');
@@ -718,9 +875,15 @@ export class LaptopCartsModule {
                             <label class="form-label">Descripción</label>
                             <textarea class="form-control" id="cart-desc" rows="2">${cart ? cart.description : ''}</textarea>
                         </div>
-                        <div class="form-check">
-                            <input class="form-check-input" type="checkbox" id="cart-active" ${(!cart || cart.active) ? 'checked' : ''}>
-                            <label class="form-check-label">Activo (Disponible para reservas)</label>
+                        <div class="card p-3 mb-3 bg-light border">
+                            <div class="form-check form-switch mb-2">
+                                <input class="form-check-input" type="checkbox" id="cart-active" ${(!cart || cart.active !== false) ? 'checked' : ''}>
+                                <label class="form-check-label fw-bold" for="cart-active">Habilitado para préstamo</label>
+                            </div>
+                            <div id="cart-disabled-reason-container" class="${(!cart || cart.active !== false) ? 'd-none' : ''}">
+                                <label class="form-label small text-muted">Motivo si está deshabilitado temporalmente:</label>
+                                <input type="text" class="form-control form-control-sm" id="cart-disabled-reason" value="${cart && cart.disabledReason ? cart.disabledReason : ''}" placeholder="Ej: En reparación, Mantenimiento...">
+                            </div>
                         </div>
                     </div>
                     <div class="modal-footer">
@@ -735,11 +898,22 @@ export class LaptopCartsModule {
         const bsModal = new bootstrap.Modal(modal);
         bsModal.show();
 
+        const activeCheckbox = document.getElementById('cart-active');
+        const reasonContainer = document.getElementById('cart-disabled-reason-container');
+        activeCheckbox.addEventListener('change', () => {
+            if (activeCheckbox.checked) {
+                reasonContainer.classList.add('d-none');
+            } else {
+                reasonContainer.classList.remove('d-none');
+            }
+        });
+
         document.getElementById('btn-save-cart').addEventListener('click', async () => {
             const name = document.getElementById('cart-name').value;
             const location = document.getElementById('cart-location').value;
             const description = document.getElementById('cart-desc').value;
-            const active = document.getElementById('cart-active').checked;
+            const active = activeCheckbox.checked;
+            const disabledReason = active ? '' : document.getElementById('cart-disabled-reason').value.trim();
             const cartType = document.getElementById('cart-type').value;
             const laptopCount = document.getElementById('cart-laptops').value;
             const dotationYear = document.getElementById('cart-year').value;
@@ -751,9 +925,9 @@ export class LaptopCartsModule {
 
             try {
                 if (cart) {
-                    await this.firebaseService.updateCart(cart.id, { name, location, description, active, cartType, laptopCount, dotationYear });
+                    await this.firebaseService.updateCart(cart.id, { name, location, description, active, disabledReason, cartType, laptopCount, dotationYear });
                 } else {
-                    await this.firebaseService.createCart({ name, location, description, active, cartType, laptopCount, dotationYear });
+                    await this.firebaseService.createCart({ name, location, description, active, disabledReason, cartType, laptopCount, dotationYear });
                 }
                 UIHelpers.showToast('Guardado correctamente', 'success');
                 bsModal.hide();

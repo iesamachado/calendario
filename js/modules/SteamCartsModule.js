@@ -222,6 +222,14 @@ export class SteamCartsModule {
         this.calendar.render();
     }
 
+    switchToInventoryTab() {
+        const tabEl = document.getElementById('tab-steam-inventory-link');
+        if (tabEl) {
+            const bsTab = bootstrap.Tab.getOrCreateInstance(tabEl);
+            bsTab.show();
+        }
+    }
+
     renderGrid(container) {
         if (this.carts.length === 0) {
             container.innerHTML = '<div class="alert alert-info">No hay carros STEAM disponibles en el sistema.</div>';
@@ -229,14 +237,40 @@ export class SteamCartsModule {
         }
 
         // Filter active carts only
-        const activeCarts = this.carts.filter(c => c.active);
+        const activeCarts = this.carts.filter(c => c.active !== false);
+        const disabledCarts = this.carts.filter(c => c.active === false);
+
+        let bannerHtml = '';
+        if (this.isTic && disabledCarts.length > 0) {
+            bannerHtml = `
+                <div class="alert alert-warning d-flex justify-content-between align-items-center py-2 px-3 mb-3 border-warning shadow-sm">
+                    <div>
+                        <i class="fas fa-info-circle text-warning fs-5 me-2 align-middle"></i>
+                        <span><strong>Aviso TIC:</strong> Hay <strong>${disabledCarts.length}</strong> carro(s) STEAM temporalmente deshabilitado(s) que no aparecen para préstamo: 
+                            ${disabledCarts.map(c => `<strong>${c.name}</strong>${c.disabledReason ? ` (${c.disabledReason})` : ''}`).join(', ')}.
+                        </span>
+                    </div>
+                    <button class="btn btn-sm btn-outline-dark" onclick="window.currentSteamCartsModule.switchToInventoryTab()">
+                        <i class="fas fa-tools me-1"></i>Gestionar Carros STEAM
+                    </button>
+                </div>
+            `;
+        }
 
         if (activeCarts.length === 0) {
-            container.innerHTML = '<div class="alert alert-warning">No hay carros STEAM activos actualmente.</div>';
+            container.innerHTML = `
+                ${bannerHtml}
+                <div class="alert alert-warning text-center p-4">
+                    <i class="fas fa-ban fa-2x mb-3 text-warning"></i>
+                    <h5>No hay carros STEAM disponibles para préstamo</h5>
+                    <p class="mb-0 text-muted">Todos los carros STEAM están temporalmente deshabilitados para reservas o en mantenimiento por el equipo TIC.</p>
+                </div>
+            `;
             return;
         }
 
         let html = `
+            ${bannerHtml}
             <table class="table table-bordered text-center align-middle">
                 <thead class="table-light">
                     <tr>
@@ -318,6 +352,11 @@ export class SteamCartsModule {
     }
 
     async makeReservation(slotIndex, slotLabel, cartId, cartName) {
+        const cart = this.carts.find(c => c.id === cartId);
+        if (cart && cart.active === false) {
+            UIHelpers.showToast('Este carro STEAM está temporalmente deshabilitado para préstamo.', 'warning');
+            return;
+        }
         this.showReservationTypeModal(slotIndex, slotLabel, cartId, cartName);
     }
 
@@ -458,6 +497,11 @@ export class SteamCartsModule {
     }
 
     async processSingleReservation(dateStr, slotIndex, slotLabel, cartId, cartName, comment = '') {
+        const cart = this.carts.find(c => c.id === cartId);
+        if (cart && cart.active === false) {
+            UIHelpers.showToast('No se puede reservar: el carro STEAM está deshabilitado temporalmente.', 'warning');
+            return;
+        }
         try {
             await this.firebaseService.reserveSteamCart(
                 dateStr,
@@ -478,6 +522,11 @@ export class SteamCartsModule {
     }
 
     async processMassReservation(slotIndex, slotLabel, cartId, cartName, comment = '') {
+        const cart = this.carts.find(c => c.id === cartId);
+        if (cart && cart.active === false) {
+            UIHelpers.showToast('No se puede reservar: el carro STEAM está deshabilitado temporalmente.', 'warning');
+            return;
+        }
         const startDate = new Date(this.currentDate);
         startDate.setHours(12, 0, 0, 0);
 
@@ -655,15 +704,27 @@ export class SteamCartsModule {
                 <div class="list-group">
                     ${this.carts.map(cart => {
                         const catInfo = this.getCategoryInfo(cart.category);
+                        const isActive = cart.active !== false;
                         const activeIncidents = (cart.incidents || []).filter(i => !i.resolved);
 
                         return `
-                        <div class="list-group-item d-flex justify-content-between align-items-center flex-wrap gap-2">
-                            <div style="max-width: 75%;">
-                                <h5 class="mb-1">
-                                    <i class="${catInfo.icon} text-primary me-2"></i>${cart.name} 
-                                    ${!cart.active ? '<span class="badge bg-danger ms-1">Inactivo</span>' : '<span class="badge bg-success ms-1">Activo</span>'}
-                                </h5>
+                        <div class="list-group-item d-flex justify-content-between align-items-center flex-wrap gap-2 ${!isActive ? 'bg-light border-start border-4 border-danger' : ''}">
+                            <div style="max-width: 70%;">
+                                <div class="d-flex align-items-center gap-2 mb-1 flex-wrap">
+                                    <h5 class="mb-0">
+                                        <i class="${catInfo.icon} text-primary me-2"></i>${cart.name}
+                                    </h5>
+                                    ${isActive ?
+                                        '<span class="badge bg-success ms-1"><i class="fas fa-check-circle me-1"></i>Disponible para préstamo</span>' :
+                                        '<span class="badge bg-danger ms-1"><i class="fas fa-ban me-1"></i>Deshabilitado temporalmente</span>'
+                                    }
+                                </div>
+                                ${!isActive ? `
+                                    <div class="alert alert-danger py-1 px-2 my-1 small border-0 d-inline-flex align-items-center gap-1">
+                                        <i class="fas fa-info-circle"></i>
+                                        <span><strong>No sale para préstamo</strong>${cart.disabledReason ? `: ${cart.disabledReason}` : ''}</span>
+                                    </div>
+                                ` : ''}
                                 ${cart.content ? `
                                     <div class="mb-2 p-2 bg-light rounded small" style="border-left: 3px solid #0d6efd;">
                                         <strong><i class="fas fa-box-open me-1"></i>Contenido:</strong> ${cart.content}
@@ -680,14 +741,23 @@ export class SteamCartsModule {
                                     }
                                 </div>
                             </div>
-                            <div class="d-flex align-items-center">
-                                <button class="btn btn-sm ${activeIncidents.length > 0 ? 'btn-warning text-dark' : 'btn-outline-warning text-dark'} me-2" onclick="window.currentSteamCartsModule.manageCartIncidents('${cart.id}')" title="Gestionar Incidencias">
+                            <div class="d-flex align-items-center flex-wrap gap-1">
+                                <button class="btn btn-sm ${activeIncidents.length > 0 ? 'btn-warning text-dark' : 'btn-outline-warning text-dark'} me-1" onclick="window.currentSteamCartsModule.manageCartIncidents('${cart.id}')" title="Gestionar Incidencias">
                                     <i class="fas fa-exclamation-triangle"></i> Incidencias ${activeIncidents.length > 0 ? `<span class="badge bg-dark text-white rounded-pill ms-1">${activeIncidents.length}</span>` : ''}
                                 </button>
-                                <button class="btn btn-sm btn-outline-secondary me-2" onclick="window.currentSteamCartsModule.editCart('${cart.id}')">
+                                ${isActive ? `
+                                    <button class="btn btn-sm btn-outline-danger me-1" onclick="window.currentSteamCartsModule.promptToggleCartStatus('${cart.id}', false)" title="Deshabilitar temporalmente para que no salga para préstamo">
+                                        <i class="fas fa-ban me-1"></i>Deshabilitar
+                                    </button>
+                                ` : `
+                                    <button class="btn btn-sm btn-success text-white me-1" onclick="window.currentSteamCartsModule.promptToggleCartStatus('${cart.id}', true)" title="Habilitar para préstamo">
+                                        <i class="fas fa-check-circle me-1"></i>Habilitar préstamo
+                                    </button>
+                                `}
+                                <button class="btn btn-sm btn-outline-secondary me-1" onclick="window.currentSteamCartsModule.editCart('${cart.id}')" title="Editar Carro STEAM">
                                     <i class="fas fa-edit"></i>
                                 </button>
-                                <button class="btn btn-sm btn-outline-danger" onclick="window.currentSteamCartsModule.deleteCart('${cart.id}')">
+                                <button class="btn btn-sm btn-outline-danger" onclick="window.currentSteamCartsModule.deleteCart('${cart.id}')" title="Eliminar Carro STEAM">
                                     <i class="fas fa-trash"></i>
                                 </button>
                             </div>
@@ -714,6 +784,83 @@ export class SteamCartsModule {
         }
     }
 
+    async promptToggleCartStatus(cartId, active) {
+        if (!this.isTic) {
+            UIHelpers.showToast('Solo el Equipo TIC puede cambiar el estado de los carros.', 'error');
+            return;
+        }
+
+        const cart = this.carts.find(c => c.id === cartId);
+        if (!cart) return;
+
+        if (active) {
+            try {
+                await this.firebaseService.toggleSteamCartActive(cartId, true);
+                UIHelpers.showToast(`Carro STEAM "${cart.name}" habilitado para préstamo.`, 'success');
+                await this.loadInventoryView();
+            } catch (error) {
+                console.error(error);
+                UIHelpers.showToast('Error al habilitar el carro STEAM: ' + error.message, 'error');
+            }
+        } else {
+            const existingModal = document.getElementById('disable-steam-cart-modal');
+            if (existingModal) existingModal.remove();
+
+            const modal = document.createElement('div');
+            modal.className = 'modal fade';
+            modal.id = 'disable-steam-cart-modal';
+            modal.innerHTML = `
+                <div class="modal-dialog">
+                    <div class="modal-content shadow">
+                        <div class="modal-header bg-warning text-dark">
+                            <h5 class="modal-title fw-bold">
+                                <i class="fas fa-pause-circle me-2"></i>Deshabilitar Carro STEAM Temporalmente
+                            </h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <p>¿Deseas deshabilitar temporalmente <strong>${cart.name}</strong>?</p>
+                            <div class="alert alert-info py-2 px-3 small">
+                                <i class="fas fa-info-circle me-1"></i><strong>Información:</strong>
+                                El carro dejará de mostrarse a los profesores en la tabla de reservas y préstamos.
+                                <u>El carro no se borrará</u> y sus datos e incidencias se conservarán intactos. Podrás volver a habilitarlo en cualquier momento.
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label fw-bold" for="disable-steam-reason-input">Motivo de la deshabilitación (opcional):</label>
+                                <input type="text" class="form-control" id="disable-steam-reason-input" placeholder="Ej: En revisión técnica, Reparación, Material en préstamo especial...">
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                            <button type="button" class="btn btn-warning fw-bold text-dark" id="btn-confirm-disable-steam-cart">
+                                <i class="fas fa-ban me-1"></i>Deshabilitar Carro STEAM
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            document.body.appendChild(modal);
+            const bsModal = new bootstrap.Modal(modal);
+            bsModal.show();
+
+            document.getElementById('btn-confirm-disable-steam-cart').addEventListener('click', async () => {
+                const reason = document.getElementById('disable-steam-reason-input').value.trim();
+                bsModal.hide();
+                try {
+                    await this.firebaseService.toggleSteamCartActive(cartId, false, reason);
+                    UIHelpers.showToast(`Carro STEAM "${cart.name}" deshabilitado temporalmente. Ya no saldrá para préstamo.`, 'success');
+                    await this.loadInventoryView();
+                } catch (error) {
+                    console.error(error);
+                    UIHelpers.showToast('Error al deshabilitar el carro: ' + error.message, 'error');
+                }
+            });
+
+            modal.addEventListener('hidden.bs.modal', () => modal.remove());
+        }
+    }
+
     showAddCartModal() {
         this.showCartModal();
     }
@@ -724,7 +871,11 @@ export class SteamCartsModule {
     }
 
     async deleteCart(cartId) {
-        if (!confirm('¿Eliminar este carro STEAM? Se perderán las reservas históricas asociadas.')) return;
+        if (!this.isTic) {
+            UIHelpers.showToast('Solo el Equipo TIC puede eliminar carros.', 'error');
+            return;
+        }
+        if (!confirm('¿Deseas eliminar definitivamente este carro STEAM?\n\n¡Atención! Si solo quieres que el carro no esté disponible para préstamo temporalmente, pulsa "Cancelar" y usa el botón "Deshabilitar" (así no perderás datos ni reservas históricas).\n\n¿Eliminar definitivamente de todos modos?')) return;
         try {
             await this.firebaseService.deleteSteamCart(cartId);
             UIHelpers.showToast('Carro STEAM eliminado', 'success');
@@ -783,9 +934,15 @@ export class SteamCartsModule {
                              <label class="form-label fw-bold">Descripción / Instrucciones de Uso</label>
                              <textarea class="form-control" id="steam-cart-desc" rows="2" placeholder="Recomendaciones, precauciones de uso o requisitos previos...">${cart ? (cart.description || '') : ''}</textarea>
                          </div>
-                         <div class="form-check">
-                             <input class="form-check-input" type="checkbox" id="steam-cart-active" ${(!cart || cart.active) ? 'checked' : ''}>
-                             <label class="form-check-label fw-bold" for="steam-cart-active">Activo (Disponible para reservas)</label>
+                         <div class="card p-3 mb-3 bg-light border">
+                             <div class="form-check form-switch mb-2">
+                                 <input class="form-check-input" type="checkbox" id="steam-cart-active" ${(!cart || cart.active !== false) ? 'checked' : ''}>
+                                 <label class="form-check-label fw-bold" for="steam-cart-active">Habilitado para préstamo</label>
+                             </div>
+                             <div id="steam-cart-disabled-reason-container" class="${(!cart || cart.active !== false) ? 'd-none' : ''}">
+                                 <label class="form-label small text-muted">Motivo si está deshabilitado temporalmente:</label>
+                                 <input type="text" class="form-control form-control-sm" id="steam-cart-disabled-reason" value="${cart && cart.disabledReason ? cart.disabledReason : ''}" placeholder="Ej: En reparación, Mantenimiento...">
+                             </div>
                          </div>
                     </div>
                     <div class="modal-footer">
@@ -800,6 +957,16 @@ export class SteamCartsModule {
         const bsModal = new bootstrap.Modal(modal);
         bsModal.show();
 
+        const activeCheckbox = document.getElementById('steam-cart-active');
+        const reasonContainer = document.getElementById('steam-cart-disabled-reason-container');
+        activeCheckbox.addEventListener('change', () => {
+            if (activeCheckbox.checked) {
+                reasonContainer.classList.add('d-none');
+            } else {
+                reasonContainer.classList.remove('d-none');
+            }
+        });
+
         document.getElementById('btn-save-steam-cart').addEventListener('click', async () => {
             const name = document.getElementById('steam-cart-name').value.trim();
             const category = document.getElementById('steam-cart-category').value;
@@ -807,7 +974,8 @@ export class SteamCartsModule {
             const units = document.getElementById('steam-cart-units').value.trim();
             const content = document.getElementById('steam-cart-content').value.trim();
             const description = document.getElementById('steam-cart-desc').value.trim();
-            const active = document.getElementById('steam-cart-active').checked;
+            const active = activeCheckbox.checked;
+            const disabledReason = active ? '' : document.getElementById('steam-cart-disabled-reason').value.trim();
 
             if (!name || !location) {
                 UIHelpers.showToast('Nombre y Ubicación son obligatorios', 'error');
@@ -815,7 +983,7 @@ export class SteamCartsModule {
             }
 
             try {
-                const data = { name, category, location, units, content, description, active };
+                const data = { name, category, location, units, content, description, active, disabledReason };
                 if (cart) {
                     await this.firebaseService.updateSteamCart(cart.id, data);
                 } else {

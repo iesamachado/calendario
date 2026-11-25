@@ -301,8 +301,11 @@ export class Calendar {
                     let cartsClass = 'btn-light text-secondary border-0';
                     let cartsTitle = 'Reservar Carros (Libre)';
 
-                    if (cartCount > 0) {
-                        if (totalActiveCarts > 0 && cartCount >= totalCartSlots) {
+                    if (totalActiveCarts === 0) {
+                        cartsClass = 'btn-light text-muted opacity-50 border-0';
+                        cartsTitle = 'Carros no disponibles temporalmente';
+                    } else if (cartCount > 0) {
+                        if (cartCount >= totalCartSlots) {
                             cartsClass = 'btn-danger text-white'; // Full
                             cartsTitle = 'Reservas Carros (Completo)';
                         } else {

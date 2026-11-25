@@ -1231,12 +1231,21 @@ export class FirebaseService {
     async createCart(data) {
         await addDoc(collection(this.db, 'carts'), {
             ...data,
-            active: true,
+            active: data.active !== undefined ? data.active : true,
             createdAt: new Date()
         });
     }
 
     async updateCart(id, data) {
+        await updateDoc(doc(this.db, 'carts', id), data);
+    }
+
+    async toggleCartActive(id, active, disabledReason = '') {
+        const data = {
+            active: active,
+            disabledReason: active ? '' : (disabledReason || ''),
+            disabledAt: active ? null : new Date()
+        };
         await updateDoc(doc(this.db, 'carts', id), data);
     }
 
@@ -1413,12 +1422,21 @@ export class FirebaseService {
     async createSteamCart(data) {
         await addDoc(collection(this.db, 'steam_carts'), {
             ...data,
-            active: true,
+            active: data.active !== undefined ? data.active : true,
             createdAt: new Date()
         });
     }
 
     async updateSteamCart(id, data) {
+        await updateDoc(doc(this.db, 'steam_carts', id), data);
+    }
+
+    async toggleSteamCartActive(id, active, disabledReason = '') {
+        const data = {
+            active: active,
+            disabledReason: active ? '' : (disabledReason || ''),
+            disabledAt: active ? null : new Date()
+        };
         await updateDoc(doc(this.db, 'steam_carts', id), data);
     }
 
