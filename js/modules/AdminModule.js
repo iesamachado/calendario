@@ -428,6 +428,7 @@ export class AdminModule {
                 { id: 'dual', label: 'Gestión Dual' },
                 { id: 'sum', label: 'Reserva Salón de Actos / SUM' },
                 { id: 'carts', label: 'Reserva Carros Portátiles' },
+                { id: 'steam_carts', label: 'Reserva Carros STEAM' },
                 { id: 'it_room', label: 'Reserva Aula de Informática' }
                 // departments is hidden from here as it's admin internal
             ];

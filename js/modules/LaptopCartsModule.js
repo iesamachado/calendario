@@ -212,12 +212,24 @@ export class LaptopCartsModule {
                             if (cart.cartType === 'blanco') icon = '<i class="fas fa-hdd text-secondary" title="Carrito blanco"></i>';
                             if (cart.cartType === 'blanco_azul') icon = '<i class="fas fa-server text-primary" title="Carrito blanco (puertas azules)"></i>';
                             
+                            const activeIncidents = (cart.incidents || []).filter(i => !i.resolved);
+                            
                             return `
                             <th style="min-width: 150px; vertical-align: top;">
                                 <div class="mb-1">${icon} ${cart.name}</div>
                                 <span class="badge ${this.getLocationBadgeClass(cart.location)} mb-1"><i class="fas fa-map-marker-alt me-1"></i>${cart.location}</span>
                                 ${cart.laptopCount ? `<small class="text-primary fw-bold d-block"><i class="fas fa-laptop me-1"></i>${cart.laptopCount} portátiles</small>` : ''}
                                 ${cart.dotationYear ? `<small class="text-secondary d-block" style="font-size: 0.75rem;">Año dotación: ${cart.dotationYear}</small>` : ''}
+                                ${activeIncidents.length > 0 ? `
+                                    <div class="mt-2">
+                                        <button class="btn btn-sm btn-warning py-0 px-2 text-dark fw-bold border-0 shadow-sm d-inline-flex align-items-center gap-1"
+                                                onclick="window.currentCartsModule.showIncidentDetailsModal('${cart.id}')"
+                                                title="Atención: Este carro tiene ${activeIncidents.length} incidencia(s) activa(s). Clic para ver detalles.">
+                                            <i class="fas fa-exclamation-triangle"></i>
+                                            <span>${activeIncidents.length === 1 ? 'Incidencia' : `${activeIncidents.length} Incidencias`}</span>
+                                        </button>
+                                    </div>
+                                ` : ''}
                                 ${cart.description ? `<div class="mt-2 text-start" style="font-size: 0.8rem; font-weight: normal; font-style: italic; color: #666; background: #f8f9fa; padding: 4px; border-radius: 4px; border-left: 3px solid #ccc;">${cart.description}</div>` : ''}
                             </th>
                         `}).join('')}
@@ -278,6 +290,9 @@ export class LaptopCartsModule {
         const endDate = this.getEndOfSchoolYear();
         const endDateStr = endDate.toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' });
 
+        const cart = this.carts.find(c => c.id === cartId);
+        const activeIncidents = (cart && cart.incidents || []).filter(i => !i.resolved);
+
         const modal = document.createElement('div');
         modal.id = 'reservation-type-modal';
         modal.className = 'modal fade';
@@ -291,6 +306,25 @@ export class LaptopCartsModule {
                     <div class="modal-body">
                         <p><strong>Carro:</strong> ${cartName}</p>
                         <p><strong>Hora:</strong> ${slotLabel}</p>
+                        
+                        ${activeIncidents.length > 0 ? `
+                            <div class="alert alert-warning border border-warning shadow-sm my-3 p-3">
+                                <div class="d-flex align-items-start gap-2">
+                                    <i class="fas fa-exclamation-triangle text-warning fs-4 mt-1"></i>
+                                    <div>
+                                        <strong class="text-dark">Aviso importante: Este carro tiene incidencias registradas</strong>
+                                        <ul class="mb-0 mt-1 ps-3 small text-dark">
+                                            ${activeIncidents.map(inc => `
+                                                <li>
+                                                    <strong>${inc.description}</strong>
+                                                    ${inc.createdAt ? `<span class="text-muted" style="font-size: 0.75rem;"> (${UIHelpers.formatDate(inc.createdAt)})</span>` : ''}
+                                                </li>
+                                            `).join('')}
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+                        ` : ''}
                         
                         <div class="form-check mb-3">
                             <input class="form-check-input" type="radio" name="resType" id="res-single" value="single" checked>
@@ -584,18 +618,27 @@ export class LaptopCartsModule {
                         if (cart.cartType === 'blanco') icon = '<i class="fas fa-hdd text-secondary me-2" title="Carrito blanco"></i>';
                         if (cart.cartType === 'blanco_azul') icon = '<i class="fas fa-server text-primary me-2" title="Carrito blanco (puertas azules)"></i>';
                         
+                        const activeIncidents = (cart.incidents || []).filter(i => !i.resolved);
+                        
                         return `
                         <div class="list-group-item d-flex justify-content-between align-items-center">
                             <div>
                                 <h5 class="mb-1">${icon}${cart.name} ${!cart.active ? '<span class="badge bg-danger">Inactivo</span>' : ''}</h5>
-                                <p class="mb-1 text-muted" style="font-size: 0.9rem;">${cart.description}</p>
-                                <div class="d-flex gap-3 align-items-center mt-2">
+                                <p class="mb-1 text-muted" style="font-size: 0.9rem;">${cart.description || ''}</p>
+                                <div class="d-flex gap-3 align-items-center mt-2 flex-wrap">
                                     <span class="badge ${this.getLocationBadgeClass(cart.location)}"><i class="fas fa-map-marker-alt me-1"></i>${cart.location}</span>
                                     ${cart.laptopCount ? `<small class="text-secondary"><i class="fas fa-laptop me-1"></i>${cart.laptopCount} uds.</small>` : ''}
                                     ${cart.dotationYear ? `<small class="text-secondary"><i class="fas fa-calendar-alt me-1"></i>Año: ${cart.dotationYear}</small>` : ''}
+                                    ${activeIncidents.length > 0 ?
+                                        `<span class="badge bg-warning text-dark border border-warning" style="cursor: pointer;" onclick="window.currentCartsModule.manageCartIncidents('${cart.id}')"><i class="fas fa-exclamation-triangle me-1"></i>${activeIncidents.length} incidencia(s)</span>` :
+                                        `<span class="badge bg-light text-secondary border" style="cursor: pointer;" onclick="window.currentCartsModule.manageCartIncidents('${cart.id}')"><i class="fas fa-check-circle text-success me-1"></i>Sin incidencias</span>`
+                                    }
                                 </div>
                             </div>
-                            <div>
+                            <div class="d-flex align-items-center">
+                                <button class="btn btn-sm ${activeIncidents.length > 0 ? 'btn-warning text-dark' : 'btn-outline-warning text-dark'} me-2" onclick="window.currentCartsModule.manageCartIncidents('${cart.id}')" title="Gestionar Incidencias">
+                                    <i class="fas fa-exclamation-triangle"></i> Incidencias ${activeIncidents.length > 0 ? `<span class="badge bg-dark text-white rounded-pill ms-1">${activeIncidents.length}</span>` : ''}
+                                </button>
                                 <button class="btn btn-sm btn-outline-secondary me-2" onclick="window.currentCartsModule.editCart('${cart.id}')">
                                     <i class="fas fa-edit"></i>
                                 </button>
@@ -722,6 +765,301 @@ export class LaptopCartsModule {
         });
 
         modal.addEventListener('hidden.bs.modal', () => modal.remove());
+    }
+
+    // --- Incidents Management ---
+
+    showIncidentDetailsModal(cartId) {
+        const cart = this.carts.find(c => c.id === cartId);
+        if (!cart) return;
+
+        const activeIncidents = (cart.incidents || []).filter(i => !i.resolved);
+
+        const modal = document.createElement('div');
+        modal.className = 'modal fade';
+        modal.innerHTML = `
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content shadow">
+                    <div class="modal-header bg-warning text-dark">
+                        <h5 class="modal-title fw-bold">
+                            <i class="fas fa-exclamation-triangle me-2"></i>Incidencias - ${cart.name}
+                        </h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="mb-3 d-flex align-items-center justify-content-between">
+                            <div>
+                                <strong>Ubicación:</strong> <span class="badge ${this.getLocationBadgeClass(cart.location)}">${cart.location}</span>
+                            </div>
+                            ${cart.laptopCount ? `<small class="text-muted"><i class="fas fa-laptop me-1"></i>${cart.laptopCount} portátiles</small>` : ''}
+                        </div>
+                        
+                        ${activeIncidents.length === 0 ? `
+                            <div class="alert alert-success d-flex align-items-center">
+                                <i class="fas fa-check-circle fs-4 me-2"></i>
+                                <span>No hay incidencias activas en este carro.</span>
+                            </div>
+                        ` : `
+                            <h6 class="fw-bold text-secondary mb-2">Incidencias Activas (${activeIncidents.length}):</h6>
+                            <div class="d-flex flex-column gap-2 mb-3">
+                                ${activeIncidents.map(inc => `
+                                    <div class="card border-warning bg-light">
+                                        <div class="card-body p-3">
+                                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                                <small class="text-muted"><i class="fas fa-clock me-1"></i>${UIHelpers.formatDate(inc.createdAt)}</small>
+                                                <span class="badge bg-secondary">${inc.createdBy || 'TIC'}</span>
+                                            </div>
+                                            <div class="fw-semibold text-dark" style="white-space: pre-wrap;">${inc.description}</div>
+                                            ${this.isTic ? `
+                                                <div class="mt-2 text-end">
+                                                    <button class="btn btn-sm btn-outline-success py-0 px-2" onclick="window.currentCartsModule.quickResolveIncident('${cart.id}', '${inc.id}')">
+                                                        <i class="fas fa-check me-1"></i>Resolver
+                                                    </button>
+                                                </div>
+                                            ` : ''}
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        `}
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                        ${this.isTic ? `
+                            <button type="button" class="btn btn-primary" onclick="bootstrap.Modal.getInstance(this.closest('.modal')).hide(); window.currentCartsModule.manageCartIncidents('${cart.id}');">
+                                <i class="fas fa-tools me-1"></i>Gestionar Incidencias
+                            </button>
+                        ` : ''}
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+        const bsModal = new bootstrap.Modal(modal);
+        bsModal.show();
+        modal.addEventListener('hidden.bs.modal', () => modal.remove());
+    }
+
+    async quickResolveIncident(cartId, incidentId) {
+        if (!confirm('¿Marcar esta incidencia como resuelta?')) return;
+        try {
+            const userName = this.user.displayName || this.user.email.split('@')[0];
+            await this.firebaseService.resolveCartIncident(cartId, incidentId, '', false, userName);
+            UIHelpers.showToast('Incidencia resuelta', 'success');
+            this.carts = await this.firebaseService.getCarts();
+            this.carts.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+            if (document.getElementById('carts-grid-container')) {
+                this.renderGrid(document.getElementById('carts-grid-container'));
+            }
+            if (document.getElementById('carts-list-container')) {
+                this.loadInventoryView();
+            }
+            const currentModal = document.querySelector('.modal.show');
+            if (currentModal) {
+                const bs = bootstrap.Modal.getInstance(currentModal);
+                if (bs) bs.hide();
+            }
+        } catch (e) {
+            console.error(e);
+            UIHelpers.showToast('Error al resolver la incidencia: ' + e.message, 'error');
+        }
+    }
+
+    manageCartIncidents(cartId) {
+        const cart = this.carts.find(c => c.id === cartId);
+        if (!cart) return;
+
+        const incidents = cart.incidents || [];
+        const activeIncidents = incidents.filter(i => !i.resolved);
+        const resolvedIncidents = incidents.filter(i => i.resolved);
+
+        const existingModal = document.getElementById('manage-incidents-modal');
+        if (existingModal) existingModal.remove();
+
+        const modal = document.createElement('div');
+        modal.id = 'manage-incidents-modal';
+        modal.className = 'modal fade';
+        modal.innerHTML = `
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content shadow">
+                    <div class="modal-header bg-dark text-white">
+                        <h5 class="modal-title">
+                            <i class="fas fa-tools text-warning me-2"></i>Gestión de Incidencias: ${cart.name}
+                        </h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <!-- Add Incident Form -->
+                        <div class="card mb-4 border-0 shadow-sm bg-light">
+                            <div class="card-body">
+                                <h6 class="fw-bold mb-2 text-primary"><i class="fas fa-plus-circle me-1"></i>Añadir Nueva Incidencia</h6>
+                                <div class="mb-2">
+                                    <textarea class="form-control" id="cart-new-incident-desc" rows="2" placeholder="Ej: Faltan los cargadores 4 y 7, o el portátil 12 no enciende..."></textarea>
+                                </div>
+                                <div class="text-end">
+                                    <button class="btn btn-primary btn-sm" id="btn-save-cart-incident">
+                                        <i class="fas fa-save me-1"></i>Guardar Incidencia
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Active Incidents List -->
+                        <h6 class="fw-bold mb-3"><i class="fas fa-exclamation-triangle text-warning me-1"></i>Incidencias Activas (${activeIncidents.length})</h6>
+                        ${activeIncidents.length === 0 ? `
+                            <p class="text-muted small ps-2">No hay incidencias activas en este carro.</p>
+                        ` : `
+                            <div class="list-group mb-4">
+                                ${activeIncidents.map(inc => `
+                                    <div class="list-group-item list-group-item-action d-flex justify-content-between align-items-start">
+                                        <div class="me-3">
+                                            <div class="fw-semibold text-dark" style="white-space: pre-wrap;">${inc.description}</div>
+                                            <small class="text-muted">
+                                                <i class="fas fa-user me-1"></i>${inc.createdBy || 'TIC'} | 
+                                                <i class="fas fa-calendar-alt me-1"></i>${UIHelpers.formatDate(inc.createdAt)}
+                                            </small>
+                                        </div>
+                                        <div class="btn-group btn-group-sm">
+                                            <button class="btn btn-outline-success" onclick="window.currentCartsModule.resolveIncidentFromModal('${cart.id}', '${inc.id}')" title="Marcar como resuelta">
+                                                <i class="fas fa-check"></i> Resolver
+                                            </button>
+                                            <button class="btn btn-outline-danger" onclick="window.currentCartsModule.deleteIncidentFromModal('${cart.id}', '${inc.id}')" title="Eliminar incidencia">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        `}
+
+                        <!-- Resolved Incidents Accordion -->
+                        ${resolvedIncidents.length > 0 ? `
+                            <div class="accordion" id="resolvedIncidentsAccordion">
+                                <div class="accordion-item">
+                                    <h2 class="accordion-header">
+                                        <button class="accordion-button collapsed py-2" type="button" data-bs-toggle="collapse" data-bs-target="#collapseResolved">
+                                            <i class="fas fa-history text-secondary me-2"></i>Historial de Incidencias Resueltas (${resolvedIncidents.length})
+                                        </button>
+                                    </h2>
+                                    <div id="collapseResolved" class="accordion-collapse collapse" data-bs-parent="#resolvedIncidentsAccordion">
+                                        <div class="accordion-body p-0">
+                                            <ul class="list-group list-group-flush">
+                                                ${resolvedIncidents.map(inc => `
+                                                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                                                        <div>
+                                                            <span class="text-decoration-line-through text-muted">${inc.description}</span>
+                                                            <div class="small text-muted">
+                                                                <span class="badge bg-success me-1">Resuelta</span> 
+                                                                ${inc.resolvedAt ? `el ${UIHelpers.formatDate(inc.resolvedAt)}` : ''} 
+                                                                ${inc.resolvedBy ? `por ${inc.resolvedBy}` : ''}
+                                                            </div>
+                                                        </div>
+                                                        <button class="btn btn-sm btn-outline-danger border-0" onclick="window.currentCartsModule.deleteIncidentFromModal('${cart.id}', '${inc.id}')" title="Eliminar del historial">
+                                                            <i class="fas fa-trash"></i>
+                                                        </button>
+                                                    </li>
+                                                `).join('')}
+                                            </ul>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        ` : ''}
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+        const bsModal = new bootstrap.Modal(modal);
+        bsModal.show();
+
+        document.getElementById('btn-save-cart-incident').addEventListener('click', async () => {
+            const descInput = document.getElementById('cart-new-incident-desc');
+            const desc = descInput.value.trim();
+            if (!desc) {
+                UIHelpers.showToast('Por favor, introduce la descripción de la incidencia', 'error');
+                return;
+            }
+
+            try {
+                const incident = {
+                    id: 'inc_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
+                    description: desc,
+                    createdAt: new Date().toISOString(),
+                    createdBy: this.user.displayName || this.user.email.split('@')[0],
+                    createdByUid: this.user.uid,
+                    resolved: false
+                };
+
+                await this.firebaseService.addCartIncident(cart.id, incident, false);
+                UIHelpers.showToast('Incidencia registrada', 'success');
+                bsModal.hide();
+
+                this.carts = await this.firebaseService.getCarts();
+                this.carts.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+                this.loadInventoryView();
+                if (document.getElementById('carts-grid-container')) {
+                    this.renderGrid(document.getElementById('carts-grid-container'));
+                }
+            } catch (e) {
+                console.error(e);
+                UIHelpers.showToast('Error al añadir la incidencia: ' + e.message, 'error');
+            }
+        });
+
+        modal.addEventListener('hidden.bs.modal', () => modal.remove());
+    }
+
+    async resolveIncidentFromModal(cartId, incidentId) {
+        if (!confirm('¿Marcar como resuelta esta incidencia?')) return;
+        try {
+            const userName = this.user.displayName || this.user.email.split('@')[0];
+            await this.firebaseService.resolveCartIncident(cartId, incidentId, '', false, userName);
+            UIHelpers.showToast('Incidencia resuelta', 'success');
+            this.carts = await this.firebaseService.getCarts();
+            this.carts.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+            this.loadInventoryView();
+            if (document.getElementById('carts-grid-container')) {
+                this.renderGrid(document.getElementById('carts-grid-container'));
+            }
+            const existingModal = document.getElementById('manage-incidents-modal');
+            if (existingModal) {
+                const bs = bootstrap.Modal.getInstance(existingModal);
+                if (bs) bs.hide();
+            }
+            this.manageCartIncidents(cartId);
+        } catch (e) {
+            console.error(e);
+            UIHelpers.showToast('Error al resolver', 'error');
+        }
+    }
+
+    async deleteIncidentFromModal(cartId, incidentId) {
+        if (!confirm('¿Eliminar esta incidencia permanentemente?')) return;
+        try {
+            await this.firebaseService.deleteCartIncident(cartId, incidentId, false);
+            UIHelpers.showToast('Incidencia eliminada', 'success');
+            this.carts = await this.firebaseService.getCarts();
+            this.carts.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+            this.loadInventoryView();
+            if (document.getElementById('carts-grid-container')) {
+                this.renderGrid(document.getElementById('carts-grid-container'));
+            }
+            const existingModal = document.getElementById('manage-incidents-modal');
+            if (existingModal) {
+                const bs = bootstrap.Modal.getInstance(existingModal);
+                if (bs) bs.hide();
+            }
+            this.manageCartIncidents(cartId);
+        } catch (e) {
+            console.error(e);
+            UIHelpers.showToast('Error al eliminar', 'error');
+        }
     }
 
     destroy() {

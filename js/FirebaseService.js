@@ -1095,6 +1095,49 @@ export class FirebaseService {
         await deleteDoc(docRef);
     }
 
+    // --- Dual Student CV Submissions ---
+
+    async addStudentCvSubmission(studentId, cvData, courseId) {
+        const studentRef = this.courseDoc('dual_students', studentId, courseId);
+        const snap = await getDoc(studentRef);
+        if (!snap.exists()) throw new Error('Alumno no encontrado');
+        const currentData = snap.data();
+        const cvSubmissions = currentData.cvSubmissions || [];
+        const newCv = {
+            id: 'cv_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+            ...cvData,
+            createdAt: new Date().toISOString()
+        };
+        cvSubmissions.push(newCv);
+        await updateDoc(studentRef, { cvSubmissions });
+        return newCv;
+    }
+
+    async updateStudentCvSubmission(studentId, cvId, updateData, courseId) {
+        const studentRef = this.courseDoc('dual_students', studentId, courseId);
+        const snap = await getDoc(studentRef);
+        if (!snap.exists()) throw new Error('Alumno no encontrado');
+        const currentData = snap.data();
+        const cvSubmissions = (currentData.cvSubmissions || []).map(cv => {
+            if (cv.id === cvId) {
+                return { ...cv, ...updateData, updatedAt: new Date().toISOString() };
+            }
+            return cv;
+        });
+        await updateDoc(studentRef, { cvSubmissions });
+        return cvSubmissions;
+    }
+
+    async deleteStudentCvSubmission(studentId, cvId, courseId) {
+        const studentRef = this.courseDoc('dual_students', studentId, courseId);
+        const snap = await getDoc(studentRef);
+        if (!snap.exists()) throw new Error('Alumno no encontrado');
+        const currentData = snap.data();
+        const cvSubmissions = (currentData.cvSubmissions || []).filter(cv => cv.id !== cvId);
+        await updateDoc(studentRef, { cvSubmissions });
+        return cvSubmissions;
+    }
+
     // --- Dual Config (Cycles/Levels) ---
 
     async getDualConfig(courseId) {
@@ -1309,6 +1352,117 @@ export class FirebaseService {
     async getReservationsForCartInRange(cartId, slotIndex, startDateStr, userId, courseId) {
         const q = query(
             this.courseCol('cart_reservations', courseId),
+            where('cartId', '==', cartId),
+            where('slotIndex', '==', slotIndex),
+            where('userId', '==', userId),
+            where('date', '>=', startDateStr)
+        );
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    }
+
+    // --- Cart Incidents (Laptops & STEAM) ---
+
+    async addCartIncident(cartId, incidentData, isSteam = false) {
+        const colName = isSteam ? 'steam_carts' : 'carts';
+        const cartRef = doc(this.db, colName, cartId);
+        const cartDoc = await getDoc(cartRef);
+        if (!cartDoc.exists()) throw new Error('Carro no encontrado');
+        const incidents = cartDoc.data().incidents || [];
+        incidents.unshift(incidentData);
+        await updateDoc(cartRef, { incidents });
+    }
+
+    async resolveCartIncident(cartId, incidentId, resolutionNotes = '', isSteam = false, resolvedBy = '') {
+        const colName = isSteam ? 'steam_carts' : 'carts';
+        const cartRef = doc(this.db, colName, cartId);
+        const cartDoc = await getDoc(cartRef);
+        if (!cartDoc.exists()) throw new Error('Carro no encontrado');
+        const incidents = (cartDoc.data().incidents || []).map(inc => {
+            if (inc.id === incidentId) {
+                return {
+                    ...inc,
+                    resolved: true,
+                    resolvedAt: new Date().toISOString(),
+                    resolvedBy: resolvedBy || '',
+                    resolvedNotes: resolutionNotes || ''
+                };
+            }
+            return inc;
+        });
+        await updateDoc(cartRef, { incidents });
+    }
+
+    async deleteCartIncident(cartId, incidentId, isSteam = false) {
+        const colName = isSteam ? 'steam_carts' : 'carts';
+        const cartRef = doc(this.db, colName, cartId);
+        const cartDoc = await getDoc(cartRef);
+        if (!cartDoc.exists()) throw new Error('Carro no encontrado');
+        const incidents = (cartDoc.data().incidents || []).filter(inc => inc.id !== incidentId);
+        await updateDoc(cartRef, { incidents });
+    }
+
+    // --- STEAM Carts ---
+
+    async getSteamCarts() {
+        const q = query(collection(this.db, 'steam_carts'));
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    }
+
+    async createSteamCart(data) {
+        await addDoc(collection(this.db, 'steam_carts'), {
+            ...data,
+            active: true,
+            createdAt: new Date()
+        });
+    }
+
+    async updateSteamCart(id, data) {
+        await updateDoc(doc(this.db, 'steam_carts', id), data);
+    }
+
+    async deleteSteamCart(id) {
+        await deleteDoc(doc(this.db, 'steam_carts', id));
+    }
+
+    async getSteamCartReservations(dateStr, courseId) {
+        const q = query(this.courseCol('steam_cart_reservations', courseId), where('date', '==', dateStr));
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    }
+
+    async getSteamCartReservationsInRange(startDate, endDate, courseId) {
+        const q = query(
+            this.courseCol('steam_cart_reservations', courseId),
+            where('date', '>=', startDate),
+            where('date', '<=', endDate)
+        );
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    }
+
+    async reserveSteamCart(dateStr, slotIndex, slotLabel, cartId, userUid, userName, comment = '', courseId) {
+        const reservationData = {
+            date: dateStr,
+            slotIndex: slotIndex,
+            slotLabel: slotLabel,
+            cartId: cartId,
+            userId: userUid,
+            userName: userName,
+            comment: comment || '',
+            createdAt: new Date()
+        };
+        await addDoc(this.courseCol('steam_cart_reservations', courseId), reservationData);
+    }
+
+    async cancelSteamCartReservation(reservationId, courseId) {
+        await deleteDoc(this.courseDoc('steam_cart_reservations', reservationId, courseId));
+    }
+
+    async getReservationsForSteamCartInRange(cartId, slotIndex, startDateStr, userId, courseId) {
+        const q = query(
+            this.courseCol('steam_cart_reservations', courseId),
             where('cartId', '==', cartId),
             where('slotIndex', '==', slotIndex),
             where('userId', '==', userId),

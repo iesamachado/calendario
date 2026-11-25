@@ -62,6 +62,19 @@ export class HelpModule {
                 access: 'carts'
             },
             {
+                id: 'reserva-steam',
+                title: 'Reservas Carros STEAM',
+                icon: 'fas fa-atom',
+                desc: 'Reserva de carros con material tecnológico y robótica (VR, McQueens, Micro:bits, Arduino, Tablets...).',
+                steps: [
+                    '<b>Seleccionar Día:</b> Consulta en el calendario el día que necesitas el material.',
+                    '<b>Comprobar Contenido y Estado:</b> Cada columna muestra el carro, su ubicación, su contenido y posibles avisos de incidencias.',
+                    '<b>Puntual o Recurrente:</b> Puedes reservar una hora concreta o programar la reserva semanal para todo el curso.',
+                    '<b>Avisos de Incidencias:</b> Si un carro tiene una advertencia ⚠️, pulsa sobre ella para conocer los detalles del material afectado.'
+                ],
+                access: 'steam_carts'
+            },
+            {
                 id: 'reserva-informatica',
                 title: 'Reserva Aula de Informática',
                 icon: 'fas fa-desktop',

@@ -87,6 +87,12 @@ service cloud.firestore {
       allow write: if isAdmin() || hasRole('equipo_tic');
     }
 
+    // STEAM Carts inventory (global — not per course)
+    match /steam_carts/{cartId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin() || hasRole('equipo_tic');
+    }
+
     // Settings (global: modules config, current_course, courses_list)
     match /settings/{settingId} {
       allow read: if isAuthenticated();
@@ -201,6 +207,13 @@ service cloud.firestore {
 
       // --- IT ROOM (AULA INFORMÁTICA) RESERVATIONS ---
       match /it_room_reservations/{reservationId} {
+        allow read: if isAuthenticated() && (isCurrentCourse(courseId) || canReadHistory());
+        allow create: if isAuthenticated() && isCurrentCourse(courseId) && request.resource.data.userId == request.auth.uid;
+        allow delete: if isAuthenticated() && isCurrentCourse(courseId) && (resource.data.userId == request.auth.uid || isAdmin() || hasRole('equipo_tic'));
+      }
+
+      // --- STEAM CART RESERVATIONS ---
+      match /steam_cart_reservations/{reservationId} {
         allow read: if isAuthenticated() && (isCurrentCourse(courseId) || canReadHistory());
         allow create: if isAuthenticated() && isCurrentCourse(courseId) && request.resource.data.userId == request.auth.uid;
         allow delete: if isAuthenticated() && isCurrentCourse(courseId) && (resource.data.userId == request.auth.uid || isAdmin() || hasRole('equipo_tic'));

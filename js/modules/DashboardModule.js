@@ -84,6 +84,7 @@ export class DashboardModule {
             { key: 'dual', title: 'Gestión Dual', icon: 'user-graduate', color: 'purple', link: '#/dual', desc: 'Control de alumnos y empresas' },
             { key: 'sum', title: 'Reserva SUM', icon: 'building', color: 'secondary', link: '#/reserva-sum', desc: 'Salón de Actos' },
             { key: 'carts', title: 'Carros Portátiles', icon: 'shopping-cart', color: 'dark', link: '#/reserva-carros', desc: 'Reserva de equipos' },
+            { key: 'steam_carts', title: 'Carros STEAM', icon: 'atom', color: 'primary', link: '#/reserva-steam', desc: 'Reserva material robótica, VR, etc.' },
             { key: 'it_room', title: 'Aula de Informática', icon: 'desktop', color: 'info', link: '#/reserva-informatica', desc: 'Reserva aula de ordenadores' }
         ];
 

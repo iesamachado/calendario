@@ -11,6 +11,7 @@ import { TicketsMaintenanceModule } from './modules/TicketsMaintenanceModule.js'
 import { Tickets3DModule } from './modules/Tickets3DModule.js';
 import { SUMModule } from './modules/SUMModule.js';
 import { LaptopCartsModule } from './modules/LaptopCartsModule.js';
+import { SteamCartsModule } from './modules/SteamCartsModule.js';
 import { RadioKitsModule } from './modules/RadioKitsModule.js';
 import { AdminModule } from './modules/AdminModule.js';
 import { DepartmentsModule } from './modules/DepartmentsModule.js';
@@ -107,6 +108,8 @@ class DashboardApp {
             'dual': '#/dual',
             'sum': '#/reserva-sum',
             'carts': '#/reserva-carros',
+            'steam_carts': '#/reserva-steam',
+            'radio_kits': '#/reserva-radio',
             'it_room': '#/reserva-informatica'
         };
 
@@ -210,6 +213,10 @@ class DashboardApp {
 
         this.router.register('/reserva-carros', () => {
             return checkAccess('carts', () => new LaptopCartsModule(mainContent, this.firebaseService, this.user, this.userRoles, this.isAdmin, this.activeCourse));
+        });
+
+        this.router.register('/reserva-steam', () => {
+            return checkAccess('steam_carts', () => new SteamCartsModule(mainContent, this.firebaseService, this.user, this.userRoles, this.isAdmin, this.activeCourse));
         });
 
         this.router.register('/reserva-radio', () => {

@@ -23,13 +23,15 @@ export class DualModule {
         this.studentSort = { column: 'name', direction: 'asc' };
         this.companyFilters = {
             withStudents: false,
+            withCvs: false,
             firstYear: false,
             secondYear: false
         };
         this.studentFilters = {
             myStudents: false,
             level: '',
-            cycle: ''
+            cycle: '',
+            cvStatus: ''
         };
 
         // Map State
@@ -342,15 +344,18 @@ export class DualModule {
         let displayCompanies = this.companies.filter(c => {
             if (searchTerm && !c.name.toLowerCase().includes(searchTerm)) return false;
 
-            if (!this.companyFilters.withStudents && !this.companyFilters.firstYear && !this.companyFilters.secondYear && !this.companyFilters.noStudents) return true;
+            if (!this.companyFilters.withStudents && !this.companyFilters.firstYear && !this.companyFilters.secondYear && !this.companyFilters.noStudents && !this.companyFilters.withCvs) return true;
 
             const companyStudents = this.students.filter(s => s.companyId === c.id);
+            const hasCvs = this.students.some(s => (s.cvSubmissions || []).some(sub => sub.companyId === c.id));
+
+            if (this.companyFilters.withCvs && !hasCvs) return false;
 
             if (this.companyFilters.noStudents) {
                 return companyStudents.length === 0;
             }
 
-            if (companyStudents.length === 0) return false;
+            if (companyStudents.length === 0 && !this.companyFilters.withCvs) return false;
 
             let match = true;
             if (this.companyFilters.withStudents && !this.companyFilters.firstYear && !this.companyFilters.secondYear) {
@@ -408,6 +413,9 @@ export class DualModule {
                 <button class="btn btn-sm ${this.companyFilters.noStudents ? 'btn-primary' : 'btn-outline-secondary'} btn-filter-toggle" data-filter="noStudents">
                     Sin Alumnos
                 </button>
+                <button class="btn btn-sm ${this.companyFilters.withCvs ? 'btn-primary' : 'btn-outline-secondary'} btn-filter-toggle" data-filter="withCvs">
+                    <i class="fas fa-file-alt me-1"></i>Con CVs Recibidos
+                </button>
                 <button class="btn btn-sm ${this.companyFilters.firstYear ? 'btn-primary' : 'btn-outline-secondary'} btn-filter-toggle" data-filter="firstYear">
                     1º Curso
                 </button>
@@ -449,6 +457,30 @@ export class DualModule {
                 ? `<div class="mt-1 small text-primary"><i class="fas fa-user-graduate me-1"></i>${assignedStudents.map(s => s.name).join(', ')}</div>`
                 : '';
 
+            // Find CVs received for this company
+            const cvStudents = [];
+            this.students.forEach(s => {
+                (s.cvSubmissions || []).forEach(sub => {
+                    if (sub.companyId === c.id) {
+                        cvStudents.push({ student: s, sub });
+                    }
+                });
+            });
+
+            let cvsHtml = '';
+            if (cvStudents.length > 0) {
+                cvsHtml = `
+                    <div class="mt-1 small">
+                        <span class="text-secondary fw-semibold" style="font-size:0.75rem;"><i class="fas fa-file-alt me-1 text-primary"></i>CVs recibidos (${cvStudents.length}):</span>
+                        ${cvStudents.map(({ student, sub }) => {
+                            const badgeClass = sub.status === 'accepted' ? 'bg-success' : sub.status === 'rejected' ? 'bg-danger' : 'bg-warning text-dark';
+                            const statusText = sub.status === 'accepted' ? 'Cogido' : sub.status === 'rejected' ? 'Rechazado' : 'Pendiente';
+                            return `<span class="badge ${badgeClass} me-1" style="font-size:0.7rem;" title="${student.name} (${student.cycle || ''}) - ${statusText}">${student.name} (${statusText})</span>`;
+                        }).join('')}
+                    </div>
+                `;
+            }
+
             return `
                         <tr class="${c._statusColor} clickable-row" data-id="${c.id}" style="cursor:pointer">
                             ${isHistorical ? `<td onclick="event.stopPropagation()"><input type="checkbox" class="form-check-input company-checkbox" value="${c.id}"></td>` : ''}
@@ -462,6 +494,7 @@ export class DualModule {
                                 ${c.managerName ? `<div class="small text-muted"><i class="fas fa-signature me-1"></i>Convenio: ${c.managerName}${c.managerNif ? ` (${c.managerNif})` : ''}</div>` : ''}
                                 ${c.tutorName ? `<div class="small text-muted"><i class="fas fa-chalkboard-teacher me-1"></i>Tutor: ${c.tutorName}${c.tutorNif ? ` (${c.tutorNif})` : ''}</div>` : ''}
                                 ${studentsHtml}
+                                ${cvsHtml}
                             </td>
                             <td>
                                 <div class="small text-primary fw-bold">${c._prospectorName}</div>
@@ -470,6 +503,10 @@ export class DualModule {
                             <td>${c.phone || '-'}</td>
                             <td>
                                 <div class="d-flex gap-1" onclick="event.stopPropagation()">
+                                    <button class="btn btn-sm btn-outline-secondary btn-cvs-company" data-id="${c.id}" title="Gestionar CVs recibidos (${cvStudents.length})">
+                                        <i class="fas fa-file-alt"></i>
+                                        ${cvStudents.length > 0 ? `<span class="badge bg-primary text-white ms-1" style="font-size:0.65rem;">${cvStudents.length}</span>` : ''}
+                                    </button>
                                     <button class="btn btn-sm btn-outline-dark btn-interactions-company" data-id="${c.id}" title="Seguimiento">
                                         <i class="fas fa-comments"></i>
                                     </button>
@@ -504,6 +541,14 @@ export class DualModule {
 
                 const company = this.companies.find(c => c.id === row.dataset.id);
                 this.openCompanyModal(company);
+            });
+        });
+
+        container.querySelectorAll('.btn-cvs-company').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const company = this.companies.find(c => c.id === btn.dataset.id);
+                if (company) this.openCompanyCVsModal(company);
             });
         });
 
@@ -723,6 +768,22 @@ export class DualModule {
                                 <label class="form-label">Notas Adicionales</label>
                                 <textarea class="form-control" id="comp-notes" rows="3">${company?.notes || ''}</textarea>
                             </div>
+
+                            ${isEdit ? `
+                            <div class="mb-3">
+                                <div class="card border-primary border-opacity-50 shadow-sm">
+                                    <div class="card-header bg-light fw-bold d-flex justify-content-between align-items-center">
+                                        <span><i class="fas fa-file-alt text-primary me-2"></i>Alumnos con CV enviado / Candidaturas</span>
+                                        ${this.courseId === this.currentCourse ? `
+                                        <button type="button" class="btn btn-sm btn-outline-primary" id="btn-toggle-add-comp-cv">
+                                            <i class="fas fa-plus me-1"></i>Enviar CV de Alumno
+                                        </button>` : ''}
+                                    </div>
+                                    <div class="card-body p-2" id="company-cvs-container">
+                                    </div>
+                                </div>
+                            </div>
+                            ` : ''}
                         </form>
                     </div>
                     <div class="modal-footer">
@@ -737,6 +798,10 @@ export class DualModule {
         document.body.appendChild(modal);
         const bsModal = new bootstrap.Modal(modal);
         bsModal.show();
+
+        if (isEdit) {
+            this.renderCompanyCvsSection(company, modal.querySelector('#company-cvs-container'), this.courseId !== this.currentCourse);
+        }
 
         // Contact Toggle Logic
         document.getElementById('btn-add-contact').addEventListener('click', (e) => {
@@ -855,6 +920,285 @@ export class DualModule {
         modal.addEventListener('hidden.bs.modal', () => modal.remove());
     }
 
+    openCompanyCVsModal(company) {
+        const isHistorical = this.courseId !== this.currentCourse;
+        const modal = document.createElement('div');
+        modal.className = 'modal fade';
+        modal.innerHTML = `
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title"><i class="fas fa-file-alt text-primary me-2"></i>CVs Recibidos: ${company.name}</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <span class="text-muted small">Alumnos cuyo CV ha sido enviado a esta empresa y estado del proceso.</span>
+                            ${!isHistorical ? `
+                            <button type="button" class="btn btn-sm btn-primary" id="btn-toggle-add-comp-cv">
+                                <i class="fas fa-plus me-1"></i>Enviar CV de Alumno
+                            </button>` : ''}
+                        </div>
+                        <div id="company-cvs-modal-container"></div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+        const bsModal = new bootstrap.Modal(modal);
+        bsModal.show();
+        modal.addEventListener('hidden.bs.modal', () => modal.remove());
+
+        const containerEl = modal.querySelector('#company-cvs-modal-container');
+        this.renderCompanyCvsSection(company, containerEl, isHistorical, modal);
+    }
+
+    renderCompanyCvsSection(company, containerEl, isHistorical = false, parentModal = null) {
+        if (!containerEl) return;
+
+        // Find all candidates for this company across this.students
+        const candidates = [];
+        this.students.forEach(student => {
+            (student.cvSubmissions || []).forEach(sub => {
+                if (sub.companyId === company.id) {
+                    candidates.push({ student, sub });
+                }
+            });
+        });
+
+        const availableStudents = [...this.students].sort((a, b) => a.name.localeCompare(b.name));
+
+        containerEl.innerHTML = `
+            <!-- Form to add student CV to this company (hidden by default) -->
+            <div id="add-comp-cv-form" class="card card-body bg-light mb-3 d-none border-primary border-opacity-25">
+                <h6 class="fw-bold mb-2 small text-primary"><i class="fas fa-paper-plane me-1"></i>Registrar Envío de CV a esta Empresa</h6>
+                <div class="row g-2">
+                    <div class="col-md-5">
+                        <label class="form-label small fw-bold mb-1">Alumno *</label>
+                        <select class="form-select form-select-sm" id="new-comp-cv-student">
+                            <option value="">-- Seleccionar Alumno --</option>
+                            ${availableStudents.map(s => `<option value="${s.id}">${s.name} (${s.cycle || '-'} ${s.level || ''})</option>`).join('')}
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small fw-bold mb-1">Fecha Envío</label>
+                        <input type="date" class="form-control form-control-sm" id="new-comp-cv-date" value="${new Date().toISOString().split('T')[0]}">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small fw-bold mb-1">Estado</label>
+                        <select class="form-select form-select-sm" id="new-comp-cv-status">
+                            <option value="pending">Enviado / Pendiente</option>
+                            <option value="accepted">Cogido</option>
+                            <option value="rejected">Rechazado</option>
+                        </select>
+                    </div>
+                    <div class="col-12 mt-2">
+                        <label class="form-label small mb-1">Observaciones / Notas</label>
+                        <input type="text" class="form-control form-control-sm" id="new-comp-cv-notes" placeholder="Ej: Entrevista técnica el viernes, esperando respuesta...">
+                    </div>
+                    <div class="col-12 mt-2 d-flex justify-content-end gap-2">
+                        <button type="button" class="btn btn-sm btn-secondary" id="btn-cancel-add-comp-cv">Cancelar</button>
+                        <button type="button" class="btn btn-sm btn-primary" id="btn-confirm-add-comp-cv">
+                            <i class="fas fa-save me-1"></i>Añadir Envío
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            ${candidates.length === 0 ? `
+                <div class="text-muted small text-center py-3">
+                    <i class="fas fa-info-circle me-1"></i>No hay registros de CVs enviados a esta empresa.
+                </div>
+            ` : `
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover align-middle mb-0" style="font-size: 0.85rem;">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Alumno</th>
+                                <th>Ciclo / Nivel</th>
+                                <th>Fecha Envío</th>
+                                <th style="min-width: 170px;">Estado</th>
+                                <th>Observaciones</th>
+                                <th class="text-end">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${candidates.map(({ student, sub }) => {
+                                const isAssignedToThis = student.companyId === company.id;
+                                return `
+                                    <tr>
+                                        <td>
+                                            <div class="fw-bold">${student.name}</div>
+                                            ${student.email ? `<div class="small text-muted">${student.email}</div>` : ''}
+                                        </td>
+                                        <td><span class="badge bg-light text-dark border">${student.cycle || '-'} ${student.level || ''}</span></td>
+                                        <td>${sub.date || '-'}</td>
+                                        <td>
+                                            ${isHistorical ? `
+                                                <span class="badge ${sub.status === 'accepted' ? 'bg-success' : sub.status === 'rejected' ? 'bg-danger' : 'bg-warning text-dark'}">
+                                                    ${sub.status === 'accepted' ? 'Cogido' : sub.status === 'rejected' ? 'Rechazado' : 'Pendiente'}
+                                                </span>
+                                            ` : `
+                                                <select class="form-select form-select-sm comp-cv-status-select" data-student-id="${student.id}" data-cv-id="${sub.id}">
+                                                    <option value="pending" ${sub.status === 'pending' || !sub.status ? 'selected' : ''}>Enviado / Pendiente</option>
+                                                    <option value="accepted" ${sub.status === 'accepted' ? 'selected' : ''}>Cogido</option>
+                                                    <option value="rejected" ${sub.status === 'rejected' ? 'selected' : ''}>Rechazado</option>
+                                                </select>
+                                            `}
+                                        </td>
+                                        <td><span class="text-muted fst-italic">${sub.notes || '-'}</span></td>
+                                        <td class="text-end">
+                                            <div class="d-flex justify-content-end align-items-center gap-1">
+                                                ${sub.status === 'accepted' ? (
+                                                    isAssignedToThis ? `
+                                                        <span class="badge bg-success py-1 px-2" title="Este alumno ya está formalmente asignado a esta empresa"><i class="fas fa-check me-1"></i>Asignado</span>
+                                                    ` : (
+                                                        !isHistorical ? `
+                                                            <button type="button" class="btn btn-sm btn-outline-success btn-comp-assign" data-student-id="${student.id}" title="Asignar formalmente al alumno a esta empresa">
+                                                                <i class="fas fa-user-check me-1"></i>Asignar
+                                                            </button>
+                                                        ` : ''
+                                                    )
+                                                ) : ''}
+                                                ${!isHistorical ? `
+                                                    <button type="button" class="btn btn-sm btn-outline-danger btn-comp-delete-cv" data-student-id="${student.id}" data-cv-id="${sub.id}" title="Eliminar registro de CV">
+                                                        <i class="fas fa-trash"></i>
+                                                    </button>
+                                                ` : ''}
+                                            </div>
+                                        </td>
+                                    </tr>
+                                `;
+                            }).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `}
+        `;
+
+        // Bind Toggle Button for Add Form
+        const rootContainer = parentModal || containerEl.closest('.modal-content') || containerEl.parentElement;
+        const btnToggle = rootContainer?.querySelector('#btn-toggle-add-comp-cv');
+        const formDiv = containerEl.querySelector('#add-comp-cv-form');
+        if (btnToggle && formDiv) {
+            btnToggle.onclick = () => formDiv.classList.toggle('d-none');
+        }
+
+        const btnCancel = containerEl.querySelector('#btn-cancel-add-comp-cv');
+        if (btnCancel && formDiv) {
+            btnCancel.onclick = () => formDiv.classList.add('d-none');
+        }
+
+        const btnConfirm = containerEl.querySelector('#btn-confirm-add-comp-cv');
+        if (btnConfirm) {
+            btnConfirm.onclick = async () => {
+                const studentId = containerEl.querySelector('#new-comp-cv-student').value;
+                if (!studentId) return alert('Por favor, selecciona un alumno.');
+                const date = containerEl.querySelector('#new-comp-cv-date').value;
+                const status = containerEl.querySelector('#new-comp-cv-status').value;
+                const notes = containerEl.querySelector('#new-comp-cv-notes').value.trim();
+
+                const student = this.students.find(s => s.id === studentId);
+                if (!student) return;
+
+                const newCv = {
+                    companyId: company.id,
+                    companyName: company.name,
+                    date,
+                    status,
+                    notes
+                };
+
+                try {
+                    btnConfirm.disabled = true;
+                    const createdCv = await this.firebaseService.addStudentCvSubmission(student.id, newCv, this.courseId);
+                    if (!student.cvSubmissions) student.cvSubmissions = [];
+                    student.cvSubmissions.push(createdCv);
+                    UIHelpers.showToast('Envío de CV registrado', 'success');
+                    this.renderCompanyCvsSection(company, containerEl, isHistorical, parentModal);
+                    this.renderCompaniesTable();
+                } catch (err) {
+                    console.error(err);
+                    UIHelpers.showToast('Error al registrar envío de CV', 'error');
+                } finally {
+                    btnConfirm.disabled = false;
+                }
+            };
+        }
+
+        // Status change selects:
+        containerEl.querySelectorAll('.comp-cv-status-select').forEach(sel => {
+            sel.onchange = async () => {
+                const studentId = sel.dataset.studentId;
+                const cvId = sel.dataset.cvId;
+                const newStatus = sel.value;
+                const student = this.students.find(s => s.id === studentId);
+                if (!student) return;
+
+                try {
+                    await this.firebaseService.updateStudentCvSubmission(studentId, cvId, { status: newStatus }, this.courseId);
+                    const cv = (student.cvSubmissions || []).find(c => c.id === cvId);
+                    if (cv) cv.status = newStatus;
+                    const statusLabel = newStatus === 'accepted' ? 'Cogido' : newStatus === 'rejected' ? 'Rechazado' : 'Pendiente';
+                    UIHelpers.showToast(`Estado de ${student.name} actualizado a ${statusLabel}`, 'success');
+                    this.renderCompanyCvsSection(company, containerEl, isHistorical, parentModal);
+                    this.renderCompaniesTable();
+                } catch (err) {
+                    console.error(err);
+                    UIHelpers.showToast('Error al actualizar estado', 'error');
+                }
+            };
+        });
+
+        // Assign button:
+        containerEl.querySelectorAll('.btn-comp-assign').forEach(btn => {
+            btn.onclick = async () => {
+                const studentId = btn.dataset.studentId;
+                const student = this.students.find(s => s.id === studentId);
+                if (!student) return;
+
+                if (!await UIHelpers.confirm(`¿Asignar a ${student.name} formalmente a la empresa ${company.name}?`)) return;
+
+                try {
+                    await this.firebaseService.updateDualStudent(studentId, { companyId: company.id }, this.courseId);
+                    student.companyId = company.id;
+                    UIHelpers.showToast(`${student.name} asignado/a a ${company.name}`, 'success');
+                    this.renderCompanyCvsSection(company, containerEl, isHistorical, parentModal);
+                    this.renderCompaniesTable();
+                } catch (err) {
+                    console.error(err);
+                    UIHelpers.showToast('Error al asignar empresa', 'error');
+                }
+            };
+        });
+
+        // Delete CV button:
+        containerEl.querySelectorAll('.btn-comp-delete-cv').forEach(btn => {
+            btn.onclick = async () => {
+                const studentId = btn.dataset.studentId;
+                const cvId = btn.dataset.cvId;
+                const student = this.students.find(s => s.id === studentId);
+                if (!student) return;
+
+                if (!await UIHelpers.confirm(`¿Eliminar el registro de envío del CV de ${student.name}?`)) return;
+
+                try {
+                    await this.firebaseService.deleteStudentCvSubmission(studentId, cvId, this.courseId);
+                    student.cvSubmissions = (student.cvSubmissions || []).filter(c => c.id !== cvId);
+                    UIHelpers.showToast('Envío de CV eliminado', 'success');
+                    this.renderCompanyCvsSection(company, containerEl, isHistorical, parentModal);
+                    this.renderCompaniesTable();
+                } catch (err) {
+                    console.error(err);
+                    UIHelpers.showToast('Error al eliminar envío', 'error');
+                }
+            };
+        });
+    }
+
     async migrateCompaniesToCurrentYear(selectedIds) {
         if (!await UIHelpers.confirm(`¿Seguro que quieres migrar ${selectedIds.length} empresas al curso actual? Se copiarán sus datos y seguimiento de llamadas, pero NO los alumnos.`)) {
             return;
@@ -952,6 +1296,15 @@ export class DualModule {
 
             if (this.studentFilters.cycle && s.cycle !== this.studentFilters.cycle) return false;
 
+            if (this.studentFilters.cvStatus) {
+                const cvs = s.cvSubmissions || [];
+                if (this.studentFilters.cvStatus === 'with_cv' && cvs.length === 0) return false;
+                if (this.studentFilters.cvStatus === 'no_cv' && cvs.length > 0) return false;
+                if (this.studentFilters.cvStatus === 'accepted' && !cvs.some(c => c.status === 'accepted')) return false;
+                if (this.studentFilters.cvStatus === 'rejected' && !cvs.some(c => c.status === 'rejected')) return false;
+                if (this.studentFilters.cvStatus === 'pending' && !cvs.some(c => c.status === 'pending' || !c.status)) return false;
+            }
+
             return true;
         });
 
@@ -1012,6 +1365,14 @@ export class DualModule {
                     <option value="">Todos los Ciclos</option>
                     ${this.config.cycles.map(c => `<option value="${c}" ${this.studentFilters.cycle === c ? 'selected' : ''}>${c}</option>`).join('')}
                 </select>
+                <select class="form-select form-select-sm" style="width: auto;" id="filter-cv-status">
+                    <option value="" ${this.studentFilters.cvStatus === '' ? 'selected' : ''}>Todos los CVs</option>
+                    <option value="with_cv" ${this.studentFilters.cvStatus === 'with_cv' ? 'selected' : ''}>Con CV enviado</option>
+                    <option value="no_cv" ${this.studentFilters.cvStatus === 'no_cv' ? 'selected' : ''}>Sin CV enviado</option>
+                    <option value="accepted" ${this.studentFilters.cvStatus === 'accepted' ? 'selected' : ''}>CV Cogido</option>
+                    <option value="rejected" ${this.studentFilters.cvStatus === 'rejected' ? 'selected' : ''}>CV Rechazado</option>
+                    <option value="pending" ${this.studentFilters.cvStatus === 'pending' ? 'selected' : ''}>CV Pendiente</option>
+                </select>
                 <button class="btn btn-danger btn-sm d-none ms-2" id="btn-delete-selected-st">
                     <i class="fas fa-trash me-1"></i>Borrar seleccionados (<span id="delete-st-count">0</span>)
                 </button>
@@ -1065,6 +1426,19 @@ export class DualModule {
                 } else {
                     companyHtml = '<span class="text-danger">Sin asignar</span>';
                 }
+            }
+
+            // CVs badges
+            const cvs = s.cvSubmissions || [];
+            if (cvs.length > 0) {
+                const cvBadges = cvs.map(sub => {
+                    const c = this.companies.find(comp => comp.id === sub.companyId);
+                    const compName = c ? c.name : (sub.companyName || 'Empresa');
+                    const badgeClass = sub.status === 'accepted' ? 'bg-success' : sub.status === 'rejected' ? 'bg-danger' : 'bg-warning text-dark';
+                    const statusText = sub.status === 'accepted' ? 'Cogido' : sub.status === 'rejected' ? 'Rechazado' : 'Pendiente';
+                    return `<span class="badge ${badgeClass} me-1" style="font-size:0.7rem;" title="${compName}: ${statusText}${sub.date ? ` (${sub.date})` : ''}">${compName}: ${statusText}</span>`;
+                }).join('');
+                companyHtml += `<div class="mt-1" style="line-height:1.2;"><span class="text-secondary fw-semibold" style="font-size:0.72rem;"><i class="fas fa-file-alt me-1 text-primary"></i>CVs (${cvs.length}):</span> ${cvBadges}</div>`;
             }
 
             s._companyName = company ? company.name : (s.possibleCompany || 'zzz');
@@ -1244,6 +1618,14 @@ export class DualModule {
                 this.renderStudentsTable();
             });
         }
+
+        const cvStatusSelect = container.querySelector('#filter-cv-status');
+        if (cvStatusSelect) {
+            cvStatusSelect.addEventListener('change', (e) => {
+                this.studentFilters.cvStatus = e.target.value;
+                this.renderStudentsTable();
+            });
+        }
     }
 
     toggleStudentFilter(filter) {
@@ -1358,10 +1740,59 @@ export class DualModule {
                                 </div>
                             </div>
 
-                            <!-- Bloque 2: Asignación de la empresa -->
+                            <!-- Bloque 2: Envío de CV a Empresas -->
+                            <div class="card border-warning mb-3 shadow-sm">
+                                <div class="card-header bg-warning text-dark fw-bold d-flex justify-content-between align-items-center">
+                                    <span><i class="fas fa-file-alt me-2"></i>2. Envío de CV a Empresas (Candidaturas)</span>
+                                    ${this.courseId === this.currentCourse ? `
+                                    <button type="button" class="btn btn-sm btn-dark" id="btn-toggle-add-st-cv">
+                                        <i class="fas fa-plus me-1"></i>Enviar CV a Empresa
+                                    </button>` : ''}
+                                </div>
+                                <div class="card-body">
+                                    <!-- Form to add new CV submission (hidden by default) -->
+                                    <div id="add-st-cv-form" class="card card-body bg-light mb-3 d-none border-warning border-opacity-50">
+                                        <h6 class="fw-bold mb-2 text-dark small"><i class="fas fa-paper-plane me-1"></i>Nuevo Envío de CV</h6>
+                                        <div class="row g-2">
+                                            <div class="col-md-5">
+                                                <label class="form-label small fw-bold mb-1">Empresa *</label>
+                                                <select class="form-select form-select-sm" id="new-st-cv-company">
+                                                    <option value="">-- Seleccionar Empresa --</option>
+                                                    ${[...this.companies].sort((a, b) => a.name.localeCompare(b.name)).map(c => `<option value="${c.id}">${c.name}</option>`).join('')}
+                                                </select>
+                                            </div>
+                                            <div class="col-md-3">
+                                                <label class="form-label small fw-bold mb-1">Fecha Envío</label>
+                                                <input type="date" class="form-control form-control-sm" id="new-st-cv-date" value="${new Date().toISOString().split('T')[0]}">
+                                            </div>
+                                            <div class="col-md-4">
+                                                <label class="form-label small fw-bold mb-1">Estado</label>
+                                                <select class="form-select form-select-sm" id="new-st-cv-status">
+                                                    <option value="pending">Enviado / Pendiente</option>
+                                                    <option value="accepted">Cogido</option>
+                                                    <option value="rejected">Rechazado</option>
+                                                </select>
+                                            </div>
+                                            <div class="col-12 mt-2">
+                                                <label class="form-label small mb-1">Observaciones / Notas</label>
+                                                <input type="text" class="form-control form-control-sm" id="new-st-cv-notes" placeholder="Ej: Entrevista técnica el viernes, esperando llamada...">
+                                            </div>
+                                            <div class="col-12 mt-2 d-flex justify-content-end gap-2">
+                                                <button type="button" class="btn btn-sm btn-secondary" id="btn-cancel-add-st-cv">Cancelar</button>
+                                                <button type="button" class="btn btn-sm btn-primary" id="btn-confirm-add-st-cv"><i class="fas fa-save me-1"></i>Añadir Envío</button>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- List of CV submissions -->
+                                    <div id="st-cv-list-container"></div>
+                                </div>
+                            </div>
+
+                            <!-- Bloque 3: Asignación de la empresa -->
                             <div class="card border-success mb-3 shadow-sm">
                                 <div class="card-header bg-success text-white fw-bold">
-                                    <i class="fas fa-building me-2"></i>2. Asignación a Empresa
+                                    <i class="fas fa-building me-2"></i>3. Asignación a Empresa
                                 </div>
                                 <div class="card-body pb-0">
                                     <div class="row">
@@ -1404,10 +1835,10 @@ export class DualModule {
                                 </div>
                             </div>
 
-                            <!-- Bloque 3: Seguimiento y Convenio -->
+                            <!-- Bloque 4: Seguimiento y Convenio -->
                             <div class="card border-info mb-0 shadow-sm">
                                 <div class="card-header bg-info text-white fw-bold">
-                                    <i class="fas fa-file-signature me-2"></i>3. Seguimiento y Convenio
+                                    <i class="fas fa-file-signature me-2"></i>4. Seguimiento y Convenio
                                 </div>
                                 <div class="card-body pb-0">
                                     <div class="row">
@@ -1446,6 +1877,151 @@ export class DualModule {
         document.body.appendChild(modal);
         const bsModal = new bootstrap.Modal(modal);
         bsModal.show();
+
+        const isHistorical = this.courseId !== this.currentCourse;
+        let currentCvSubmissions = JSON.parse(JSON.stringify(student?.cvSubmissions || []));
+
+        // CV submissions UI logic inside student modal
+        const cvListContainer = modal.querySelector('#st-cv-list-container');
+        const formAddCv = modal.querySelector('#add-st-cv-form');
+        const btnToggleAddCv = modal.querySelector('#btn-toggle-add-st-cv');
+        if (btnToggleAddCv && formAddCv) {
+            btnToggleAddCv.onclick = () => formAddCv.classList.toggle('d-none');
+        }
+        const btnCancelAddCv = modal.querySelector('#btn-cancel-add-st-cv');
+        if (btnCancelAddCv && formAddCv) {
+            btnCancelAddCv.onclick = () => formAddCv.classList.add('d-none');
+        }
+        const btnConfirmAddCv = modal.querySelector('#btn-confirm-add-st-cv');
+        if (btnConfirmAddCv) {
+            btnConfirmAddCv.onclick = () => {
+                const compSelect = modal.querySelector('#new-st-cv-company');
+                const companyId = compSelect.value;
+                if (!companyId) return alert('Por favor, selecciona una empresa.');
+                const companyName = compSelect.options[compSelect.selectedIndex].text;
+                const date = modal.querySelector('#new-st-cv-date').value;
+                const status = modal.querySelector('#new-st-cv-status').value;
+                const notes = modal.querySelector('#new-st-cv-notes').value.trim();
+
+                const newCv = {
+                    id: 'cv_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+                    companyId,
+                    companyName,
+                    date,
+                    status,
+                    notes
+                };
+
+                currentCvSubmissions.push(newCv);
+                renderStudentCvList();
+                formAddCv.classList.add('d-none');
+                modal.querySelector('#new-st-cv-notes').value = '';
+                compSelect.value = '';
+            };
+        }
+
+        const renderStudentCvList = () => {
+            if (currentCvSubmissions.length === 0) {
+                cvListContainer.innerHTML = '<div class="text-muted small text-center py-2"><i class="fas fa-info-circle me-1"></i>No se ha registrado el envío del CV a ninguna empresa.</div>';
+                return;
+            }
+
+            cvListContainer.innerHTML = `
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover align-middle mb-0" style="font-size: 0.85rem;">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Empresa</th>
+                                <th>Fecha Envío</th>
+                                <th style="min-width: 170px;">Estado</th>
+                                <th>Observaciones</th>
+                                <th class="text-end">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${currentCvSubmissions.map(cv => {
+                                const company = this.companies.find(c => c.id === cv.companyId);
+                                const compName = company ? company.name : (cv.companyName || 'Empresa');
+                                return `
+                                    <tr>
+                                        <td>
+                                            <div class="fw-bold">${compName}</div>
+                                            ${company?.address ? `<div class="small text-muted">${company.address}</div>` : ''}
+                                        </td>
+                                        <td>${cv.date || '-'}</td>
+                                        <td>
+                                            ${isHistorical ? `
+                                                <span class="badge ${cv.status === 'accepted' ? 'bg-success' : cv.status === 'rejected' ? 'bg-danger' : 'bg-warning text-dark'}">
+                                                    ${cv.status === 'accepted' ? 'Cogido' : cv.status === 'rejected' ? 'Rechazado' : 'Pendiente'}
+                                                </span>
+                                            ` : `
+                                                <select class="form-select form-select-sm st-cv-status-select" data-id="${cv.id}">
+                                                    <option value="pending" ${cv.status === 'pending' || !cv.status ? 'selected' : ''}>Enviado / Pendiente</option>
+                                                    <option value="accepted" ${cv.status === 'accepted' ? 'selected' : ''}>Cogido</option>
+                                                    <option value="rejected" ${cv.status === 'rejected' ? 'selected' : ''}>Rechazado</option>
+                                                </select>
+                                            `}
+                                        </td>
+                                        <td><span class="text-muted fst-italic">${cv.notes || '-'}</span></td>
+                                        <td class="text-end">
+                                            <div class="d-flex justify-content-end align-items-center gap-1">
+                                                ${cv.status === 'accepted' ? `
+                                                    <button type="button" class="btn btn-sm btn-outline-success btn-st-assign-cv" data-cid="${cv.companyId}" title="Seleccionar en Bloque 3 como Empresa Asignada">
+                                                        <i class="fas fa-check-circle me-1"></i>Asignar
+                                                    </button>
+                                                ` : ''}
+                                                ${!isHistorical ? `
+                                                    <button type="button" class="btn btn-sm btn-outline-danger btn-st-delete-cv" data-id="${cv.id}" title="Eliminar registro de CV">
+                                                        <i class="fas fa-trash"></i>
+                                                    </button>
+                                                ` : ''}
+                                            </div>
+                                        </td>
+                                    </tr>
+                                `;
+                            }).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+
+            // Bind status change selects
+            cvListContainer.querySelectorAll('.st-cv-status-select').forEach(sel => {
+                sel.onchange = () => {
+                    const cvId = sel.dataset.id;
+                    const item = currentCvSubmissions.find(c => c.id === cvId);
+                    if (item) {
+                        item.status = sel.value;
+                        renderStudentCvList();
+                    }
+                };
+            });
+
+            // Bind Assign button
+            cvListContainer.querySelectorAll('.btn-st-assign-cv').forEach(btn => {
+                btn.onclick = () => {
+                    const cid = btn.dataset.cid;
+                    const stCompanySelect = modal.querySelector('#st-company');
+                    if (stCompanySelect) {
+                        stCompanySelect.value = cid;
+                        stCompanySelect.classList.add('border-3', 'border-success');
+                        setTimeout(() => stCompanySelect.classList.remove('border-3'), 2000);
+                        UIHelpers.showToast('Empresa seleccionada en Bloque 3: Asignación a Empresa', 'info');
+                    }
+                };
+            });
+
+            // Bind Delete button
+            cvListContainer.querySelectorAll('.btn-st-delete-cv').forEach(btn => {
+                btn.onclick = () => {
+                    const cvId = btn.dataset.id;
+                    currentCvSubmissions = currentCvSubmissions.filter(c => c.id !== cvId);
+                    renderStudentCvList();
+                };
+            });
+        };
+
+        renderStudentCvList();
 
         const linkCompany = document.getElementById('link-view-company');
         if (linkCompany) {
@@ -1486,12 +2062,14 @@ export class DualModule {
                 endDate: document.getElementById('st-end').value,
                 status: document.getElementById('st-status').value,
                 dualStatus: document.getElementById('st-dual-status').value,
-                possibleCompany: document.getElementById('st-possible-company').value
+                possibleCompany: document.getElementById('st-possible-company').value,
+                cvSubmissions: currentCvSubmissions
             };
 
             try {
                 if (isEdit) {
                     await this.firebaseService.updateDualStudent(student.id, data, this.courseId);
+                    student.cvSubmissions = currentCvSubmissions;
                 } else {
                     await this.firebaseService.createDualStudent(data, this.courseId);
                 }
